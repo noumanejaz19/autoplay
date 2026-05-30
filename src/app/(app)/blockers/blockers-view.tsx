@@ -5,9 +5,9 @@ import { StatusBadge } from "@/components/ui/status-badge";
 import { Modal, Field, Input, Textarea, Select, ModalBtn } from "@/components/ui/modal";
 import { useToast } from "@/components/ui/toast";
 import { cn } from "@/lib/utils";
-import { Plus, Search, AlertTriangle, CheckCircle2 } from "lucide-react";
+import { Plus, Search, AlertTriangle, CheckCircle2, MessageSquare } from "lucide-react";
 import type { Blocker, Client, Project } from "@/lib/supabase/types";
-import { createBlockerAction, resolveBlockerAction, updateBlockerAction } from "@/app/actions/blockers";
+import { createBlockerAction, resolveBlockerAction, updateBlockerAction, askClientAction } from "@/app/actions/blockers";
 
 type BlockerWithRels = Blocker & {
   client: Pick<Client, "id" | "company_name"> | null;
@@ -20,10 +20,13 @@ const IMPACT_BG: Record<string, string> = {
   Medium: "border-l-indigo-400", Low: "border-l-slate-300",
 };
 
+const DEFAULT_ASK_MSG = "Hi, we wanted to check in — we're waiting on a few items to move forward on your project. Could you please review the links and access shared with you? Let us know if you have any questions!";
+
 type Props = {
   blockers: BlockerWithRels[];
   clients: Pick<Client, "id" | "company_name">[];
   projects: Pick<Project, "id" | "project_name">[];
+  isAdmin?: boolean;
 };
 
 const BLANK = {
@@ -33,13 +36,15 @@ const BLANK = {
   follow_up_date: "", notes: "",
 };
 
-export function BlockersView({ blockers, clients, projects }: Props) {
+export function BlockersView({ blockers, clients, projects, isAdmin }: Props) {
   const { success, error: toastError } = useToast();
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("Open");
   const [addOpen, setAddOpen] = useState(false);
   const [editBlocker, setEditBlocker] = useState<BlockerWithRels | null>(null);
   const [resolveTarget, setResolveTarget] = useState<BlockerWithRels | null>(null);
+  const [askTarget, setAskTarget] = useState<BlockerWithRels | null>(null);
+  const [askMessage, setAskMessage] = useState(DEFAULT_ASK_MSG);
   const [resolutionNotes, setResolutionNotes] = useState("");
   const [form, setForm] = useState(BLANK);
   const [isPending, startTransition] = useTransition();
@@ -57,7 +62,11 @@ export function BlockersView({ blockers, clients, projects }: Props) {
     setEditBlocker(b);
   }
 
-  function closeModals() { setAddOpen(false); setEditBlocker(null); setResolveTarget(null); setResolutionNotes(""); setForm(BLANK); }
+  function closeModals() {
+    setAddOpen(false); setEditBlocker(null); setResolveTarget(null);
+    setAskTarget(null); setAskMessage(DEFAULT_ASK_MSG);
+    setResolutionNotes(""); setForm(BLANK);
+  }
 
   function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -78,6 +87,16 @@ export function BlockersView({ blockers, clients, projects }: Props) {
       const res = await resolveBlockerAction(resolveTarget.id, resolutionNotes || undefined);
       if (res.error) { toastError(res.error); return; }
       success("Blocker resolved.");
+      closeModals();
+    });
+  }
+
+  function handleAskClient() {
+    if (!askTarget) return;
+    startTransition(async () => {
+      const res = await askClientAction(askTarget.id, askMessage);
+      if (res.error) { toastError(res.error); return; }
+      success("Marked as Asked Client.");
       closeModals();
     });
   }
@@ -126,8 +145,8 @@ export function BlockersView({ blockers, clients, projects }: Props) {
           <Search className="w-4 h-4 text-slate-400" />
           <input type="text" placeholder="Search blockers..." value={search} onChange={e => setSearch(e.target.value)} className="flex-1 text-sm bg-transparent outline-none text-slate-700 placeholder:text-slate-400" />
         </div>
-        <div className="flex gap-1">
-          {["Open", "In Progress", "Resolved", "All"].map(s => (
+        <div className="flex gap-1 flex-wrap">
+          {["Open", "In Progress", "Asked Client", "Resolved", "All"].map(s => (
             <button key={s} onClick={() => setStatusFilter(s)} className={cn("text-xs px-3 py-1.5 rounded-lg font-medium transition-colors", statusFilter === s ? "bg-indigo-600 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200")}>{s}</button>
           ))}
         </div>
@@ -166,11 +185,25 @@ export function BlockersView({ blockers, clients, projects }: Props) {
                   </div>
                 </div>
                 {b.description && <p className="text-sm text-slate-600 mt-2 leading-relaxed">{b.description}</p>}
+                {b.asked_client_message && b.status === "Asked Client" && (
+                  <div className="mt-2 bg-blue-50 border border-blue-100 rounded-xl px-3 py-2">
+                    <p className="text-xs text-blue-600 font-medium mb-0.5">Message sent to client:</p>
+                    <p className="text-xs text-blue-700 italic">{b.asked_client_message}</p>
+                  </div>
+                )}
                 {b.notes && <p className="text-xs text-slate-400 mt-1 italic">{b.notes}</p>}
                 <div className="flex items-center gap-3 mt-3">
                   <button onClick={() => openEdit(b)} className="text-xs text-indigo-600 hover:text-indigo-700 font-medium">Edit</button>
+                  {b.status !== "Resolved" && b.status !== "Asked Client" && isAdmin && b.needed_from === "Client" && (
+                    <button
+                      onClick={() => { setAskTarget(b); setAskMessage(DEFAULT_ASK_MSG); }}
+                      className="text-xs text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1"
+                    >
+                      <MessageSquare className="w-3 h-3" /> Ask Client
+                    </button>
+                  )}
                   {b.status !== "Resolved" && (
-                    <button onClick={() => { setResolveTarget(b); }} className="text-xs text-emerald-600 hover:text-emerald-700 font-medium flex items-center gap-1">
+                    <button onClick={() => setResolveTarget(b)} className="text-xs text-emerald-600 hover:text-emerald-700 font-medium flex items-center gap-1">
                       <CheckCircle2 className="w-3 h-3" /> Resolve
                     </button>
                   )}
@@ -229,7 +262,7 @@ export function BlockersView({ blockers, clients, projects }: Props) {
             </Field>
             <Field label="Status">
               <Select name="status" value={form.status} onChange={e => f("status", e.target.value)}>
-                {["Open", "In Progress", "Resolved", "Escalated"].map(o => <option key={o}>{o}</option>)}
+                {["Open", "In Progress", "Asked Client", "Resolved", "Escalated"].map(o => <option key={o}>{o}</option>)}
               </Select>
             </Field>
             <Field label="Requested Date">
@@ -246,6 +279,32 @@ export function BlockersView({ blockers, clients, projects }: Props) {
             </Field>
           </div>
         </form>
+      </Modal>
+
+      {/* Ask Client Modal */}
+      <Modal
+        open={!!askTarget}
+        onClose={closeModals}
+        title="Ask Client"
+        subtitle={askTarget?.client?.company_name}
+        size="sm"
+        footer={
+          <>
+            <ModalBtn variant="secondary" onClick={closeModals}>Cancel</ModalBtn>
+            <ModalBtn onClick={handleAskClient} disabled={isPending}>
+              {isPending ? "Sending…" : "Mark as Asked Client"}
+            </ModalBtn>
+          </>
+        }
+      >
+        <div className="space-y-3">
+          <p className="text-sm text-slate-600">Edit the message to send to the client (for your reference — copy and send via WhatsApp/email).</p>
+          <Textarea
+            value={askMessage}
+            onChange={e => setAskMessage(e.target.value)}
+            rows={5}
+          />
+        </div>
       </Modal>
 
       {/* Resolve Modal */}

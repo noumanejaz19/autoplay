@@ -38,6 +38,23 @@ export async function createTimeLogAction(formData: FormData) {
 
   if (!profile) return { error: "Profile not found." };
 
+  const description = String(formData.get("work_description") || "").trim();
+  if (!description) return { error: "Description is required." };
+
+  // Upload recording if provided
+  let recordingUrl: string | null = null;
+  const recordingFile = formData.get("recording_file") as File | null;
+  if (recordingFile && recordingFile.size > 0) {
+    const ext = recordingFile.name.split(".").pop() ?? "mp4";
+    const path = `${profile.id}/${Date.now()}.${ext}`;
+    const { error: uploadError } = await supabase.storage
+      .from("time-log-recordings")
+      .upload(path, recordingFile, { contentType: recordingFile.type });
+    if (uploadError) return { error: `Upload failed: ${uploadError.message}` };
+    const { data: urlData } = supabase.storage.from("time-log-recordings").getPublicUrl(path);
+    recordingUrl = urlData.publicUrl;
+  }
+
   const insert: TimeLogInsert = {
     user_id: profile.id,
     client_id: String(formData.get("client_id") || "").trim() || null,
@@ -45,11 +62,12 @@ export async function createTimeLogAction(formData: FormData) {
     task_id: String(formData.get("task_id") || "").trim() || null,
     work_date: String(formData.get("work_date") || new Date().toISOString().slice(0, 10)),
     hours: Number(formData.get("hours") || 1),
-    work_description: String(formData.get("work_description") || "").trim() || null,
+    work_description: description,
     category: String(formData.get("category") || "Development"),
     billable: formData.get("billable") !== "false",
     approved: false,
     approved_by: null,
+    recording_url: recordingUrl,
   };
 
   if (!insert.hours || insert.hours <= 0) return { error: "Hours must be greater than 0." };

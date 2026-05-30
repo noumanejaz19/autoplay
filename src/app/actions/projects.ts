@@ -51,6 +51,8 @@ export async function createProjectAction(formData: FormData) {
     budget: null,
     tags: formData.get("tags") ? String(formData.get("tags")).split(",").map(t => t.trim()).filter(Boolean) : [],
     internal_notes: String(formData.get("internal_notes") || "").trim() || null,
+    overdue_reason: null,
+    employee_category: String(formData.get("employee_category") || "").trim() || null,
     created_by: profile?.id ?? null,
   };
 
@@ -99,6 +101,8 @@ export async function updateProjectAction(id: string, formData: FormData) {
       estimated_hours: formData.get("estimated_hours") ? Number(formData.get("estimated_hours")) : null,
       tags: formData.get("tags") ? String(formData.get("tags")).split(",").map(t => t.trim()).filter(Boolean) : [],
       internal_notes: String(formData.get("internal_notes") || "").trim() || null,
+      overdue_reason: String(formData.get("overdue_reason") || "").trim() || null,
+      employee_category: String(formData.get("employee_category") || "").trim() || null,
     })
     .eq("id", id);
 

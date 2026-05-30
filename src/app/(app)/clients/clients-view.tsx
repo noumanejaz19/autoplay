@@ -6,8 +6,8 @@ import { Avatar } from "@/components/ui/avatar";
 import { Modal, Field, Input, Textarea, Select, ModalBtn } from "@/components/ui/modal";
 import { useToast } from "@/components/ui/toast";
 import {
-  Search, Plus, Filter, AlertTriangle, Clock, ArrowRight,
-  LayoutGrid, List, TrendingUp, Building2,
+  Search, Plus, Filter, Clock, ArrowRight,
+  LayoutGrid, List, TrendingUp, FolderOpen,
 } from "lucide-react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
@@ -18,14 +18,7 @@ type ClientRow = Client & {
   owner: { id: string; full_name: string; profile_photo_url: string | null } | null;
 };
 
-const STATUS_FILTERS = ["All", "Lead", "Onboarding", "Active", "Paused", "Completed"];
-const HEALTH_COLORS: Record<string, string> = {
-  Healthy: "text-emerald-600",
-  Good: "text-emerald-600",
-  "At Risk": "text-amber-600",
-  Blocked: "text-rose-600",
-  Completed: "text-slate-500",
-};
+const STATUS_FILTERS = ["All", "Upcoming", "In The Talk", "Prioritized", "Active", "Closed", "Completed", "Archived"];
 
 function initials(name: string) {
   return name.split(" ").map(w => w[0]).join("").toUpperCase().slice(0, 2);
@@ -64,6 +57,18 @@ function ClientCard({ client, onEdit }: { client: ClientRow; onEdit: (c: ClientR
           <p className="font-medium text-slate-700 mt-0.5">{client.preferred_channel}</p>
         </div>
       </div>
+
+      {client.drive_folder_url && (
+        <a
+          href={client.drive_folder_url}
+          target="_blank"
+          rel="noopener noreferrer"
+          onClick={e => e.stopPropagation()}
+          className="relative z-10 flex items-center gap-1.5 text-xs text-indigo-600 hover:text-indigo-700 font-medium"
+        >
+          <FolderOpen className="w-3.5 h-3.5" /> Drive Folder
+        </a>
+      )}
 
       <div className="flex items-center justify-between text-xs text-slate-500 border-t border-slate-100 pt-3">
         <div className="flex items-center gap-1">
@@ -115,7 +120,8 @@ const BLANK_FORM = {
   company_name: "", contact_person_name: "", contact_email: "",
   contact_phone: "", whatsapp: "", preferred_channel: "Email",
   timezone: "UTC", industry: "", website: "", priority: "Medium",
-  status: "Active", health_status: "Healthy", internal_notes: "",
+  status: "Upcoming", health_status: "Healthy", internal_notes: "",
+  drive_folder_url: "",
 };
 
 export function ClientsView({ clients }: { clients: ClientRow[] }) {
@@ -144,6 +150,7 @@ export function ClientsView({ clients }: { clients: ClientRow[] }) {
       status: c.status,
       health_status: c.health_status,
       internal_notes: c.internal_notes ?? "",
+      drive_folder_url: c.drive_folder_url ?? "",
     });
     setEditClient(c);
   }
@@ -189,6 +196,7 @@ export function ClientsView({ clients }: { clients: ClientRow[] }) {
   });
 
   const activeCount = clients.filter(c => c.status === "Active").length;
+  const pipelineCount = clients.filter(c => ["Upcoming", "In The Talk", "Prioritized"].includes(c.status)).length;
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -211,8 +219,8 @@ export function ClientsView({ clients }: { clients: ClientRow[] }) {
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {[
           { label: "Active", count: activeCount, color: "text-emerald-600", bg: "bg-emerald-50" },
+          { label: "Pipeline", count: pipelineCount, color: "text-amber-600", bg: "bg-amber-50" },
           { label: "At Risk", count: clients.filter(c => c.health_status === "At Risk" || c.health_status === "Blocked").length, color: "text-rose-600", bg: "bg-rose-50" },
-          { label: "Leads", count: clients.filter(c => c.status === "Lead").length, color: "text-amber-600", bg: "bg-amber-50" },
           { label: "Completed", count: clients.filter(c => c.status === "Completed").length, color: "text-indigo-600", bg: "bg-indigo-50" },
         ].map(s => (
           <div key={s.label} className={`${s.bg} rounded-2xl px-4 py-3`}>
@@ -352,13 +360,16 @@ export function ClientsView({ clients }: { clients: ClientRow[] }) {
             </Field>
             <Field label="Status">
               <Select name="status" value={form.status} onChange={e => setForm(f => ({ ...f, status: e.target.value }))}>
-                {["Lead", "Onboarding", "Active", "Paused", "Completed"].map(o => <option key={o}>{o}</option>)}
+                {["Upcoming", "In The Talk", "Prioritized", "Active", "Closed", "Completed", "Archived"].map(o => <option key={o}>{o}</option>)}
               </Select>
             </Field>
             <Field label="Health Status">
               <Select name="health_status" value={form.health_status} onChange={e => setForm(f => ({ ...f, health_status: e.target.value }))}>
                 {["Healthy", "Good", "At Risk", "Blocked", "Completed"].map(o => <option key={o}>{o}</option>)}
               </Select>
+            </Field>
+            <Field label="Google Drive Folder URL" hint="Link to the client's Google Drive folder" className="sm:col-span-2">
+              <Input name="drive_folder_url" placeholder="https://drive.google.com/..." value={form.drive_folder_url} onChange={e => setForm(f => ({ ...f, drive_folder_url: e.target.value }))} />
             </Field>
             <Field label="Internal Notes" hint="Visible to your team only" className="sm:col-span-2">
               <Textarea name="internal_notes" placeholder="Any notes about this client..." value={form.internal_notes} onChange={e => setForm(f => ({ ...f, internal_notes: e.target.value }))} />

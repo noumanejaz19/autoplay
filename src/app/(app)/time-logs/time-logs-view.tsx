@@ -1,11 +1,11 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState, useTransition, useRef, useCallback } from "react";
 import { SectionCard } from "@/components/ui/section-card";
 import { Modal, Field, Input, Textarea, Select, ModalBtn } from "@/components/ui/modal";
 import { useToast } from "@/components/ui/toast";
 import { cn } from "@/lib/utils";
-import { Plus, Clock, DollarSign, Users, BarChart2, CheckCircle2, Circle } from "lucide-react";
+import { Plus, Clock, Users, BarChart2, DollarSign, Circle, Upload, X, Link as LinkIcon } from "lucide-react";
 import type { TimeLog, Client, Project, Profile } from "@/lib/supabase/types";
 import { createTimeLogAction, updateTimeLogAction, deleteTimeLogAction } from "@/app/actions/time-logs";
 import {
@@ -31,7 +31,6 @@ type Props = {
   timeLogs: TimeLogWithRels[];
   clients: Pick<Client, "id" | "company_name">[];
   projects: Pick<Project, "id" | "project_name">[];
-  currentProfileId: string | null;
 };
 
 const BLANK = {
@@ -40,13 +39,16 @@ const BLANK = {
   hours: "2", work_description: "", billable: "true", category: "Development",
 };
 
-export function TimeLogsView({ timeLogs, clients, projects, currentProfileId }: Props) {
+export function TimeLogsView({ timeLogs, clients, projects }: Props) {
   const { success, error: toastError } = useToast();
   const [memberFilter, setMemberFilter] = useState("All");
   const [addOpen, setAddOpen] = useState(false);
   const [editLog, setEditLog] = useState<TimeLogWithRels | null>(null);
   const [form, setForm] = useState(BLANK);
+  const [recordingFile, setRecordingFile] = useState<File | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
   const [isPending, startTransition] = useTransition();
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   function f(k: string, v: string) { setForm(p => ({ ...p, [k]: v })); }
 
@@ -61,14 +63,28 @@ export function TimeLogsView({ timeLogs, clients, projects, currentProfileId }: 
       billable: String(log.billable),
       category: log.category,
     });
+    setRecordingFile(null);
     setEditLog(log);
   }
 
-  function closeModals() { setAddOpen(false); setEditLog(null); setForm(BLANK); }
+  function closeModals() { setAddOpen(false); setEditLog(null); setForm(BLANK); setRecordingFile(null); }
+
+  const onDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    const file = e.dataTransfer.files[0];
+    if (file && file.type.startsWith("video/")) setRecordingFile(file);
+    else toastError("Please drop a video file.");
+  }, [toastError]);
 
   function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    if (!form.work_description.trim()) {
+      toastError("Description is required — describe what you worked on.");
+      return;
+    }
     const fd = new FormData(e.currentTarget);
+    if (recordingFile) fd.set("recording_file", recordingFile);
     startTransition(async () => {
       const res = editLog
         ? await updateTimeLogAction(editLog.id, fd)
@@ -87,7 +103,6 @@ export function TimeLogsView({ timeLogs, clients, projects, currentProfileId }: 
     });
   }
 
-  // Aggregations
   const billableTotal = timeLogs.filter(t => t.billable).reduce((s, t) => s + t.hours, 0);
   const nonBillableTotal = timeLogs.filter(t => !t.billable).reduce((s, t) => s + t.hours, 0);
 
@@ -97,13 +112,6 @@ export function TimeLogsView({ timeLogs, clients, projects, currentProfileId }: 
     clientHoursMap[n] = (clientHoursMap[n] ?? 0) + t.hours;
   });
   const clientHoursData = Object.entries(clientHoursMap).map(([name, hours]) => ({ name: name.split(" ")[0], hours }));
-
-  const memberHoursMap: Record<string, number> = {};
-  timeLogs.forEach(t => {
-    const n = t.user?.full_name ?? "Unknown";
-    memberHoursMap[n] = (memberHoursMap[n] ?? 0) + t.hours;
-  });
-  const memberHoursData = Object.entries(memberHoursMap).map(([name, hours]) => ({ name: name.split(" ")[0], hours }));
 
   const categoryMap: Record<string, number> = {};
   timeLogs.forEach(t => { categoryMap[t.category] = (categoryMap[t.category] ?? 0) + t.hours; });
@@ -213,7 +221,14 @@ export function TimeLogsView({ timeLogs, clients, projects, currentProfileId }: 
                 <p className="text-xs text-slate-500">{log.work_date}</p>
                 <div>
                   <p className="text-sm text-slate-800 truncate">{log.work_description ?? "—"}</p>
-                  <p className="text-xs text-slate-400 truncate">{log.project?.project_name ?? log.client?.company_name ?? "—"}</p>
+                  <div className="flex items-center gap-2 mt-0.5">
+                    <p className="text-xs text-slate-400 truncate">{log.project?.project_name ?? log.client?.company_name ?? "—"}</p>
+                    {log.recording_url && (
+                      <a href={log.recording_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-0.5 text-[10px] text-indigo-500 hover:text-indigo-600 font-medium">
+                        <LinkIcon className="w-2.5 h-2.5" /> Recording
+                      </a>
+                    )}
+                  </div>
                 </div>
                 <p className="text-xs text-slate-600 truncate">{log.user?.full_name?.split(" ")[0] ?? "—"}</p>
                 <p className="text-xs text-slate-500 truncate">{log.client?.company_name ?? "—"}</p>
@@ -283,8 +298,69 @@ export function TimeLogsView({ timeLogs, clients, projects, currentProfileId }: 
                 <option value="false">Non-Billable</option>
               </Select>
             </Field>
-            <Field label="Description" className="sm:col-span-2">
-              <Textarea name="work_description" placeholder="What did you work on?" value={form.work_description} onChange={e => f("work_description", e.target.value)} />
+            <Field label="Description" required hint="Required — what did you work on?" className="sm:col-span-2">
+              <Textarea
+                name="work_description"
+                placeholder="Describe what you worked on in detail..."
+                value={form.work_description}
+                onChange={e => f("work_description", e.target.value)}
+                required
+                rows={3}
+              />
+            </Field>
+
+            {/* Screen recording upload */}
+            <Field label="Screen Recording" hint="Optional — drag & drop a video file" className="sm:col-span-2">
+              {editLog?.recording_url && !recordingFile ? (
+                <div className="flex items-center gap-3 p-3 bg-indigo-50 border border-indigo-200 rounded-xl">
+                  <LinkIcon className="w-4 h-4 text-indigo-500 flex-shrink-0" />
+                  <a href={editLog.recording_url} target="_blank" rel="noopener noreferrer" className="text-sm text-indigo-600 font-medium hover:underline truncate flex-1">
+                    View existing recording
+                  </a>
+                  <button type="button" onClick={() => f("replace_recording", "true")} className="text-xs text-slate-500 hover:text-slate-700">Replace</button>
+                </div>
+              ) : (
+                <div
+                  onDragOver={e => { e.preventDefault(); setIsDragging(true); }}
+                  onDragLeave={() => setIsDragging(false)}
+                  onDrop={onDrop}
+                  onClick={() => fileInputRef.current?.click()}
+                  className={cn(
+                    "border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-colors",
+                    isDragging ? "border-indigo-400 bg-indigo-50" : "border-slate-200 hover:border-indigo-300 hover:bg-slate-50"
+                  )}
+                >
+                  {recordingFile ? (
+                    <div className="flex items-center justify-center gap-3">
+                      <Upload className="w-4 h-4 text-indigo-500" />
+                      <span className="text-sm text-slate-700 font-medium truncate max-w-48">{recordingFile.name}</span>
+                      <button
+                        type="button"
+                        onClick={e => { e.stopPropagation(); setRecordingFile(null); }}
+                        className="p-1 hover:bg-slate-200 rounded-full"
+                      >
+                        <X className="w-3 h-3 text-slate-500" />
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex flex-col items-center gap-2">
+                      <Upload className="w-6 h-6 text-slate-300" />
+                      <p className="text-sm text-slate-500">Drop a screen recording here, or <span className="text-indigo-600 font-medium">browse</span></p>
+                      <p className="text-xs text-slate-400">MP4, MOV, WebM</p>
+                    </div>
+                  )}
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="video/*"
+                    className="hidden"
+                    onChange={e => {
+                      const file = e.target.files?.[0];
+                      if (file) setRecordingFile(file);
+                    }}
+                  />
+                </div>
+              )}
             </Field>
           </div>
         </form>

@@ -46,9 +46,10 @@ export async function createClientAction(formData: FormData) {
     website: String(formData.get("website") || "").trim() || null,
     project_owner_id: null,
     priority: (formData.get("priority") as ClientInsert["priority"]) || "Medium",
-    status: (formData.get("status") as ClientInsert["status"]) || "Active",
+    status: (formData.get("status") as ClientInsert["status"]) || "Upcoming",
     health_status: (formData.get("health_status") as ClientInsert["health_status"]) || "Healthy",
     internal_notes: String(formData.get("internal_notes") || "").trim() || null,
+    drive_folder_url: String(formData.get("drive_folder_url") || "").trim() || null,
     created_by: profile?.id ?? null,
   };
 
@@ -83,9 +84,10 @@ export async function updateClientAction(id: string, formData: FormData) {
       industry: String(formData.get("industry") || "").trim() || null,
       website: String(formData.get("website") || "").trim() || null,
       priority: (formData.get("priority") as ClientInsert["priority"]) || "Medium",
-      status: (formData.get("status") as ClientInsert["status"]) || "Active",
+      status: (formData.get("status") as ClientInsert["status"]) || "Upcoming",
       health_status: (formData.get("health_status") as ClientInsert["health_status"]) || "Healthy",
       internal_notes: String(formData.get("internal_notes") || "").trim() || null,
+      drive_folder_url: String(formData.get("drive_folder_url") || "").trim() || null,
     })
     .eq("id", id);
 

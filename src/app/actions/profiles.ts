@@ -1,6 +1,7 @@
 "use server";
 
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { DEMO_PROFILES, DEMO_PROFILE } from "@/lib/demo-data";
@@ -105,10 +106,37 @@ export async function inviteUserAction(formData: FormData) {
   const email = String(formData.get("email") || "").trim();
   const fullName = String(formData.get("full_name") || "").trim();
   const role = String(formData.get("role") || "user");
+  const jobTitle = String(formData.get("job_title") || "").trim() || null;
+  const department = String(formData.get("department") || "").trim() || null;
 
   if (!email || !fullName) return { error: "Email and name are required." };
 
-  return {
-    info: `To invite ${fullName} (${email}), go to your Supabase Dashboard > Authentication > Users > Invite User. Set their role to '${role}' in the profiles table after they accept.`
-  };
+  const admin = createAdminClient();
+
+  // Send the invite email via Supabase Auth
+  const { data: inviteData, error: inviteError } = await admin.auth.admin.inviteUserByEmail(email, {
+    data: { full_name: fullName },
+  });
+
+  if (inviteError) return { error: inviteError.message };
+
+  // Create the profile row for the invited user
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  await (admin.from("profiles") as any).insert({
+    auth_user_id: inviteData.user?.id ?? null,
+    full_name: fullName,
+    email,
+    role: role as "admin" | "user",
+    job_title: jobTitle,
+    department,
+    timezone: "UTC",
+    availability_status: "Available",
+    is_active: true,
+    years_experience: 0,
+    skills: [],
+    certifications: [],
+  });
+
+  revalidatePath("/team");
+  return { success: true, message: `Invite sent to ${email}. They will receive an email to set their password.` };
 }

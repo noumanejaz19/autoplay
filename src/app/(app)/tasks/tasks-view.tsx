@@ -7,7 +7,7 @@ import { useToast } from "@/components/ui/toast";
 import { cn } from "@/lib/utils";
 import { Plus, Search, LayoutGrid, List, Calendar, Clock, User, CheckSquare } from "lucide-react";
 import type { Task, Client, Project, Profile } from "@/lib/supabase/types";
-import { createTaskAction, updateTaskAction, updateTaskStatusAction, deleteTaskAction } from "@/app/actions/tasks";
+import { createTaskAction, updateTaskAction, deleteTaskAction } from "@/app/actions/tasks";
 
 type TaskWithRels = Task & {
   assignee: Pick<Profile, "id" | "full_name" | "profile_photo_url"> | null;
@@ -34,6 +34,7 @@ type Props = {
   clients: Pick<Client, "id" | "company_name">[];
   projects: Pick<Project, "id" | "project_name">[];
   profiles: Pick<Profile, "id" | "full_name">[];
+  currentProfileId: string | null;
 };
 
 const BLANK = {
@@ -42,9 +43,10 @@ const BLANK = {
   due_date: "", estimated_hours: "", tags: "",
 };
 
-export function TasksView({ tasks, clients, projects, profiles }: Props) {
+export function TasksView({ tasks, clients, projects, profiles, currentProfileId }: Props) {
   const { success, error: toastError } = useToast();
   const [view, setView] = useState<"kanban" | "table">("kanban");
+  const [myTasksOnly, setMyTasksOnly] = useState(false);
   const [search, setSearch] = useState("");
   const [priorityFilter, setPriorityFilter] = useState("All");
   const [addOpen, setAddOpen] = useState(false);
@@ -80,13 +82,6 @@ export function TasksView({ tasks, clients, projects, profiles }: Props) {
     });
   }
 
-  function handleStatusChange(id: string, status: string) {
-    startTransition(async () => {
-      const res = await updateTaskStatusAction(id, status);
-      if (res.error) toastError(res.error);
-    });
-  }
-
   function handleDelete(id: string) {
     startTransition(async () => {
       const res = await deleteTaskAction(id);
@@ -95,7 +90,11 @@ export function TasksView({ tasks, clients, projects, profiles }: Props) {
     });
   }
 
-  const filtered = tasks.filter(t => {
+  const base = myTasksOnly && currentProfileId
+    ? tasks.filter(t => t.assigned_to === currentProfileId)
+    : tasks;
+
+  const filtered = base.filter(t => {
     const q = search.toLowerCase();
     const matchSearch = !q ||
       t.title.toLowerCase().includes(q) ||
@@ -103,6 +102,8 @@ export function TasksView({ tasks, clients, projects, profiles }: Props) {
     const matchPriority = priorityFilter === "All" || t.priority === priorityFilter;
     return matchSearch && matchPriority;
   });
+
+  const myCount = currentProfileId ? tasks.filter(t => t.assigned_to === currentProfileId).length : 0;
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -115,6 +116,15 @@ export function TasksView({ tasks, clients, projects, profiles }: Props) {
           </p>
         </div>
         <div className="flex gap-2">
+          <button
+            onClick={() => setMyTasksOnly(p => !p)}
+            className={cn("flex items-center gap-1.5 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors border",
+              myTasksOnly ? "bg-indigo-600 text-white border-indigo-600" : "bg-white border-slate-200 text-slate-600 hover:bg-slate-50"
+            )}
+          >
+            <User className="w-4 h-4" />
+            My Tasks {myCount > 0 && <span className={cn("text-xs px-1.5 py-0.5 rounded-full ml-0.5", myTasksOnly ? "bg-white/20" : "bg-indigo-100 text-indigo-700")}>{myCount}</span>}
+          </button>
           <button onClick={() => setView("kanban")} className={cn("p-2.5 rounded-xl transition-colors", view === "kanban" ? "bg-indigo-100 text-indigo-600" : "bg-white border border-slate-200 text-slate-500 hover:bg-slate-50")}>
             <LayoutGrid className="w-4 h-4" />
           </button>
@@ -138,6 +148,9 @@ export function TasksView({ tasks, clients, projects, profiles }: Props) {
             <button key={p} onClick={() => setPriorityFilter(p)} className={cn("text-xs px-3 py-1.5 rounded-lg font-medium transition-colors", priorityFilter === p ? "bg-indigo-600 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200")}>{p}</button>
           ))}
         </div>
+        {myTasksOnly && (
+          <span className="text-xs text-indigo-600 font-medium bg-indigo-50 px-3 py-1.5 rounded-lg">Showing your tasks only</span>
+        )}
       </div>
 
       {/* Kanban / Table */}
@@ -181,7 +194,9 @@ export function TasksView({ tasks, clients, projects, profiles }: Props) {
                         <div className="flex items-center justify-between text-[10px] text-slate-400">
                           <div className="flex items-center gap-1">
                             <User className="w-2.5 h-2.5" />
-                            <span className="truncate max-w-16">{task.assignee?.full_name?.split(" ")[0] ?? "Unassigned"}</span>
+                            <span className={cn("truncate max-w-16", task.assigned_to === currentProfileId ? "text-indigo-600 font-medium" : "")}>
+                              {task.assignee?.full_name?.split(" ")[0] ?? "Unassigned"}
+                            </span>
                           </div>
                           <div className="flex items-center gap-2">
                             {task.estimated_hours && (
@@ -228,7 +243,9 @@ export function TasksView({ tasks, clients, projects, profiles }: Props) {
             >
               <div className="min-w-0">
                 <p className="text-sm font-medium text-slate-800 truncate">{task.title}</p>
-                <p className="text-xs text-slate-400 truncate">{task.assignee?.full_name ?? "Unassigned"}</p>
+                <p className={cn("text-xs truncate", task.assigned_to === currentProfileId ? "text-indigo-600 font-medium" : "text-slate-400")}>
+                  {task.assignee?.full_name ?? "Unassigned"}
+                </p>
               </div>
               <p className="text-xs text-slate-500 truncate">{task.client?.company_name ?? "—"}</p>
               <StatusBadge status={task.status} size="sm" />

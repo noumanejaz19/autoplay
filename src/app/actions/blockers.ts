@@ -51,6 +51,8 @@ export async function createBlockerAction(formData: FormData) {
     resolved_at: null,
     resolution_notes: null,
     notes: String(formData.get("notes") || "").trim() || null,
+    asked_client_at: null,
+    asked_client_message: null,
   };
 
   if (!insert.title || !insert.client_id) return { error: "Title and client are required." };
@@ -79,6 +81,22 @@ export async function resolveBlockerAction(id: string, resolutionNotes?: string)
 
   revalidatePath("/blockers");
   revalidatePath("/dashboard");
+  return { success: true };
+}
+
+export async function askClientAction(id: string, message: string) {
+  const supabase = await createClient();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error } = await (supabase.from("blockers") as any)
+    .update({
+      status: "Asked Client",
+      asked_client_at: new Date().toISOString(),
+      asked_client_message: message,
+    })
+    .eq("id", id);
+
+  if (error) return { error: error.message };
+  revalidatePath("/blockers");
   return { success: true };
 }
 
