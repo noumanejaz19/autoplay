@@ -114,8 +114,10 @@ export async function inviteUserAction(formData: FormData) {
   const admin = createAdminClient();
 
   // Send the invite email via Supabase Auth
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3001";
   const { data: inviteData, error: inviteError } = await admin.auth.admin.inviteUserByEmail(email, {
     data: { full_name: fullName },
+    redirectTo: `${appUrl}/auth/callback`,
   });
 
   if (inviteError) return { error: inviteError.message };
