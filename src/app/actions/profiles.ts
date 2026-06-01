@@ -9,10 +9,10 @@ import { DEMO_PROFILES, DEMO_PROFILE } from "@/lib/demo-data";
 export async function getProfiles() {
   if (process.env.NEXT_PUBLIC_DEMO_MODE === "true") return DEMO_PROFILES;
   const supabase = await createClient();
+  // Return all profiles (active and disabled) so admin can manage them
   const { data, error } = await supabase
     .from("profiles")
     .select("*")
-    .eq("is_active", true)
     .order("full_name");
 
   if (error) throw new Error(error.message);
@@ -141,4 +141,79 @@ export async function inviteUserAction(formData: FormData) {
 
   revalidatePath("/team");
   return { success: true, message: `Invite sent to ${email}. They will receive an email to set their password.` };
+}
+
+async function getCallerIsAdmin() {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { isAdmin: false, supabase };
+  const { data } = await supabase.from("profiles").select("role").eq("auth_user_id", user.id).single();
+  return { isAdmin: (data as { role: string } | null)?.role === "admin", supabase };
+}
+
+export async function disableUserAction(profileId: string) {
+  const { isAdmin, supabase } = await getCallerIsAdmin();
+  if (!isAdmin) return { error: "Only admins can disable users." };
+
+  const { data: profileData } = await supabase
+    .from("profiles").select("auth_user_id, role").eq("id", profileId).single();
+  const profile = profileData as { auth_user_id: string; role: string } | null;
+  if (!profile) return { error: "Profile not found." };
+  if (profile.role === "admin") return { error: "Cannot disable an admin account." };
+
+  const admin = createAdminClient();
+  // Ban for 100 years — effectively disabled but all data preserved
+  const { error: banError } = await admin.auth.admin.updateUserById(profile.auth_user_id, {
+    ban_duration: "876600h",
+  });
+  if (banError) return { error: banError.message };
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  await (admin.from("profiles") as any).update({ is_active: false }).eq("id", profileId);
+
+  revalidatePath("/team");
+  return { success: true };
+}
+
+export async function reactivateUserAction(profileId: string) {
+  const { isAdmin } = await getCallerIsAdmin();
+  if (!isAdmin) return { error: "Only admins can reactivate users." };
+
+  const supabase = await createClient();
+  const { data: profileData } = await supabase
+    .from("profiles").select("auth_user_id").eq("id", profileId).single();
+  const profile = profileData as { auth_user_id: string } | null;
+  if (!profile) return { error: "Profile not found." };
+
+  const admin = createAdminClient();
+  const { error: unbanError } = await admin.auth.admin.updateUserById(profile.auth_user_id, {
+    ban_duration: "none",
+  });
+  if (unbanError) return { error: unbanError.message };
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  await (admin.from("profiles") as any).update({ is_active: true }).eq("id", profileId);
+
+  revalidatePath("/team");
+  return { success: true };
+}
+
+export async function deleteUserAction(profileId: string) {
+  const { isAdmin } = await getCallerIsAdmin();
+  if (!isAdmin) return { error: "Only admins can delete users." };
+
+  const supabase = await createClient();
+  const { data: profileData } = await supabase
+    .from("profiles").select("auth_user_id, role").eq("id", profileId).single();
+  const profile = profileData as { auth_user_id: string; role: string } | null;
+  if (!profile) return { error: "Profile not found." };
+  if (profile.role === "admin") return { error: "Cannot delete an admin account." };
+
+  const admin = createAdminClient();
+  // Deleting the auth user cascades to the profile row via FK
+  const { error: deleteError } = await admin.auth.admin.deleteUser(profile.auth_user_id);
+  if (deleteError) return { error: deleteError.message };
+
+  revalidatePath("/team");
+  return { success: true };
 }

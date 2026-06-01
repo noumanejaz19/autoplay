@@ -5,9 +5,12 @@ import { Avatar } from "@/components/ui/avatar";
 import { Modal, Field, Input, Select, ModalBtn } from "@/components/ui/modal";
 import { useToast } from "@/components/ui/toast";
 import { cn } from "@/lib/utils";
-import { Search, Users, Mail, Phone, MapPin, Briefcase, UserPlus, Shield } from "lucide-react";
+import {
+  Search, Users, Mail, Phone, MapPin, Briefcase, UserPlus, Shield,
+  MoreVertical, UserX, UserCheck, Trash2,
+} from "lucide-react";
 import type { Profile } from "@/lib/supabase/types";
-import { inviteUserAction } from "@/app/actions/profiles";
+import { inviteUserAction, disableUserAction, reactivateUserAction, deleteUserAction } from "@/app/actions/profiles";
 import { getPermissions, updatePermissionsAction } from "@/app/actions/permissions";
 
 function initials(name: string) {
@@ -45,10 +48,12 @@ export function TeamView({
   profiles,
   clients,
   isAdmin,
+  currentProfileId,
 }: {
   profiles: Profile[];
   clients?: { id: string; company_name: string }[];
   isAdmin: boolean;
+  currentProfileId: string | null;
 }) {
   const { success, error: toastError } = useToast();
   const [search, setSearch] = useState("");
@@ -57,6 +62,8 @@ export function TeamView({
   const [inviteForm, setInviteForm] = useState(BLANK_INVITE);
   const [permTarget, setPermTarget] = useState<Profile | null>(null);
   const [perms, setPerms] = useState<PermState>(DEFAULT_PERMS);
+  const [menuOpen, setMenuOpen] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Profile | null>(null);
   const [isPending, startTransition] = useTransition();
 
   const departments = Array.from(new Set(profiles.map(p => p.department).filter(Boolean))) as string[];
@@ -85,6 +92,7 @@ export function TeamView({
   }
 
   async function openPerms(member: Profile) {
+    setMenuOpen(null);
     setPermTarget(member);
     const data = await getPermissions(member.id);
     if (data) {
@@ -129,6 +137,34 @@ export function TeamView({
     }));
   }
 
+  function handleDisable(member: Profile) {
+    setMenuOpen(null);
+    startTransition(async () => {
+      const res = await disableUserAction(member.id);
+      if (res.error) toastError(res.error);
+      else success(`${member.full_name} has been disabled. All their data is preserved.`);
+    });
+  }
+
+  function handleReactivate(member: Profile) {
+    setMenuOpen(null);
+    startTransition(async () => {
+      const res = await reactivateUserAction(member.id);
+      if (res.error) toastError(res.error);
+      else success(`${member.full_name} has been reactivated and can log in again.`);
+    });
+  }
+
+  function handleDelete() {
+    if (!deleteTarget) return;
+    startTransition(async () => {
+      const res = await deleteUserAction(deleteTarget.id);
+      if (res.error) { toastError(res.error); return; }
+      success(`${deleteTarget.full_name} has been permanently deleted.`);
+      setDeleteTarget(null);
+    });
+  }
+
   const PERM_TOGGLES: { key: keyof PermState; label: string; hint: string }[] = [
     { key: "can_view_all_clients", label: "View All Clients", hint: "Can see all clients (overrides client list)" },
     { key: "can_view_time_logs", label: "View Time Logs", hint: "Can view and log time" },
@@ -139,13 +175,14 @@ export function TeamView({
   ];
 
   return (
-    <div className="space-y-6 animate-fade-in">
+    <div className="space-y-6 animate-fade-in" onClick={() => setMenuOpen(null)}>
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Team</h1>
           <p className="text-slate-500 text-sm mt-1">
-            {profiles.length} members · {profiles.filter(p => p.availability_status === "Available").length} available
+            {profiles.filter(p => p.is_active).length} active · {profiles.filter(p => !p.is_active).length > 0 ? `${profiles.filter(p => !p.is_active).length} disabled` : ""}
+            {profiles.filter(p => !p.is_active).length === 0 && `${profiles.length} members`}
           </p>
         </div>
         {isAdmin && (
@@ -161,9 +198,9 @@ export function TeamView({
       {/* Stats */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {[
-          { label: "Available", count: profiles.filter(p => p.availability_status === "Available").length, color: "text-emerald-600", bg: "bg-emerald-50" },
-          { label: "Busy", count: profiles.filter(p => p.availability_status === "Busy").length, color: "text-amber-600", bg: "bg-amber-50" },
-          { label: "Away", count: profiles.filter(p => p.availability_status === "Away").length, color: "text-slate-600", bg: "bg-slate-50" },
+          { label: "Available", count: profiles.filter(p => p.is_active && p.availability_status === "Available").length, color: "text-emerald-600", bg: "bg-emerald-50" },
+          { label: "Busy", count: profiles.filter(p => p.is_active && p.availability_status === "Busy").length, color: "text-amber-600", bg: "bg-amber-50" },
+          { label: "Disabled", count: profiles.filter(p => !p.is_active).length, color: "text-rose-600", bg: "bg-rose-50" },
           { label: "Admin", count: profiles.filter(p => p.role === "admin").length, color: "text-indigo-600", bg: "bg-indigo-50" },
         ].map(s => (
           <div key={s.label} className={`${s.bg} rounded-2xl px-4 py-3`}>
@@ -204,83 +241,154 @@ export function TeamView({
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
-          {filtered.map(member => (
-            <div key={member.id} className="bg-white rounded-2xl border border-slate-200 p-5 flex flex-col gap-4">
-              <div className="flex items-start justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="relative">
-                    {member.profile_photo_url ? (
-                      <img src={member.profile_photo_url} alt={member.full_name} className="w-10 h-10 rounded-full object-cover" />
-                    ) : (
-                      <Avatar name={member.full_name} initials={initials(member.full_name)} size="md" />
+          {filtered.map(member => {
+            const isSelf = member.id === currentProfileId;
+            const isDisabled = !member.is_active;
+            const canManage = isAdmin && !isSelf && member.role !== "admin";
+
+            return (
+              <div
+                key={member.id}
+                className={cn(
+                  "bg-white rounded-2xl border p-5 flex flex-col gap-4 relative transition-opacity",
+                  isDisabled ? "border-rose-100 opacity-60" : "border-slate-200"
+                )}
+              >
+                {/* Disabled banner */}
+                {isDisabled && (
+                  <div className="absolute top-3 left-1/2 -translate-x-1/2 bg-rose-100 text-rose-600 text-[10px] font-semibold px-3 py-0.5 rounded-full uppercase tracking-wide">
+                    Disabled
+                  </div>
+                )}
+
+                <div className="flex items-start justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="relative">
+                      {member.profile_photo_url ? (
+                        <img src={member.profile_photo_url} alt={member.full_name} className="w-10 h-10 rounded-full object-cover" />
+                      ) : (
+                        <Avatar name={member.full_name} initials={initials(member.full_name)} size="md" />
+                      )}
+                      {!isDisabled && (
+                        <div className={cn("absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-white", AVAILABILITY_COLOR[member.availability_status])} />
+                      )}
+                    </div>
+                    <div>
+                      <p className="font-semibold text-slate-900">{member.full_name}</p>
+                      <p className="text-xs text-slate-500">{member.job_title ?? "Team Member"}</p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-start gap-1">
+                    <div className="flex flex-col items-end gap-1">
+                      <span className={cn("text-[10px] font-medium px-2 py-0.5 rounded-full", member.role === "admin" ? "bg-indigo-100 text-indigo-700" : "bg-slate-100 text-slate-600")}>{member.role}</span>
+                      {!isDisabled && <span className="text-[10px] text-slate-400">{member.availability_status}</span>}
+                    </div>
+
+                    {/* 3-dot menu for non-self, non-admin members */}
+                    {canManage && (
+                      <div className="relative ml-1">
+                        <button
+                          onClick={e => { e.stopPropagation(); setMenuOpen(menuOpen === member.id ? null : member.id); }}
+                          className="p-1 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors"
+                        >
+                          <MoreVertical className="w-4 h-4" />
+                        </button>
+                        {menuOpen === member.id && (
+                          <div onClick={e => e.stopPropagation()} className="absolute right-0 top-7 w-48 bg-white rounded-xl border border-slate-200 shadow-lg z-10 py-1 overflow-hidden">
+                            <button
+                              onClick={() => openPerms(member)}
+                              className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 transition-colors"
+                            >
+                              <Shield className="w-3.5 h-3.5 text-slate-400" /> Manage Permissions
+                            </button>
+                            {isDisabled ? (
+                              <button
+                                onClick={() => handleReactivate(member)}
+                                disabled={isPending}
+                                className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-emerald-600 hover:bg-emerald-50 transition-colors"
+                              >
+                                <UserCheck className="w-3.5 h-3.5" /> Reactivate Account
+                              </button>
+                            ) : (
+                              <button
+                                onClick={() => handleDisable(member)}
+                                disabled={isPending}
+                                className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-amber-600 hover:bg-amber-50 transition-colors"
+                              >
+                                <UserX className="w-3.5 h-3.5" /> Disable Access
+                              </button>
+                            )}
+                            <div className="border-t border-slate-100 my-1" />
+                            <button
+                              onClick={() => { setMenuOpen(null); setDeleteTarget(member); }}
+                              className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-rose-600 hover:bg-rose-50 transition-colors"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" /> Delete Permanently
+                            </button>
+                          </div>
+                        )}
+                      </div>
                     )}
-                    <div className={cn("absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-white", AVAILABILITY_COLOR[member.availability_status])} />
-                  </div>
-                  <div>
-                    <p className="font-semibold text-slate-900">{member.full_name}</p>
-                    <p className="text-xs text-slate-500">{member.job_title ?? "Team Member"}</p>
                   </div>
                 </div>
-                <div className="flex flex-col items-end gap-1">
-                  <span className={cn("text-[10px] font-medium px-2 py-0.5 rounded-full", member.role === "admin" ? "bg-indigo-100 text-indigo-700" : "bg-slate-100 text-slate-600")}>{member.role}</span>
-                  <span className="text-[10px] text-slate-400">{member.availability_status}</span>
+
+                <div className="space-y-1.5 text-xs text-slate-500">
+                  {member.email && (
+                    <div className="flex items-center gap-2">
+                      <Mail className="w-3.5 h-3.5 flex-shrink-0" />
+                      <span className="truncate">{member.email}</span>
+                    </div>
+                  )}
+                  {member.phone && (
+                    <div className="flex items-center gap-2">
+                      <Phone className="w-3.5 h-3.5 flex-shrink-0" />
+                      <span>{member.phone}</span>
+                    </div>
+                  )}
+                  {member.department && (
+                    <div className="flex items-center gap-2">
+                      <Briefcase className="w-3.5 h-3.5 flex-shrink-0" />
+                      <span>{member.department}</span>
+                    </div>
+                  )}
+                  {member.location && (
+                    <div className="flex items-center gap-2">
+                      <MapPin className="w-3.5 h-3.5 flex-shrink-0" />
+                      <span>{member.location}</span>
+                    </div>
+                  )}
+                  {member.timezone && (
+                    <div className="flex items-center gap-2">
+                      <span className="w-3.5 text-center">🕐</span>
+                      <span>{member.timezone}</span>
+                    </div>
+                  )}
                 </div>
+
+                {member.bio && <p className="text-xs text-slate-400 line-clamp-2 leading-relaxed">{member.bio}</p>}
+
+                {member.skills.length > 0 && (
+                  <div className="flex gap-1.5 flex-wrap">
+                    {member.skills.slice(0, 4).map(s => (
+                      <span key={s} className="text-[10px] bg-indigo-50 text-indigo-600 px-2 py-0.5 rounded-full">{s}</span>
+                    ))}
+                    {member.skills.length > 4 && <span className="text-[10px] text-slate-400">+{member.skills.length - 4} more</span>}
+                  </div>
+                )}
+
+                {/* Permissions shortcut (visible when no 3-dot menu shown) */}
+                {isAdmin && !isSelf && member.role !== "admin" && (
+                  <button
+                    onClick={() => openPerms(member)}
+                    className="flex items-center gap-1.5 text-xs text-slate-500 hover:text-indigo-600 font-medium transition-colors border-t border-slate-100 pt-3"
+                  >
+                    <Shield className="w-3.5 h-3.5" /> Manage Permissions
+                  </button>
+                )}
               </div>
-
-              <div className="space-y-1.5 text-xs text-slate-500">
-                {member.email && (
-                  <div className="flex items-center gap-2">
-                    <Mail className="w-3.5 h-3.5 flex-shrink-0" />
-                    <span className="truncate">{member.email}</span>
-                  </div>
-                )}
-                {member.phone && (
-                  <div className="flex items-center gap-2">
-                    <Phone className="w-3.5 h-3.5 flex-shrink-0" />
-                    <span>{member.phone}</span>
-                  </div>
-                )}
-                {member.department && (
-                  <div className="flex items-center gap-2">
-                    <Briefcase className="w-3.5 h-3.5 flex-shrink-0" />
-                    <span>{member.department}</span>
-                  </div>
-                )}
-                {member.location && (
-                  <div className="flex items-center gap-2">
-                    <MapPin className="w-3.5 h-3.5 flex-shrink-0" />
-                    <span>{member.location}</span>
-                  </div>
-                )}
-                {member.timezone && (
-                  <div className="flex items-center gap-2">
-                    <span className="w-3.5 text-center">🕐</span>
-                    <span>{member.timezone}</span>
-                  </div>
-                )}
-              </div>
-
-              {member.bio && <p className="text-xs text-slate-400 line-clamp-2 leading-relaxed">{member.bio}</p>}
-
-              {member.skills.length > 0 && (
-                <div className="flex gap-1.5 flex-wrap">
-                  {member.skills.slice(0, 4).map(s => (
-                    <span key={s} className="text-[10px] bg-indigo-50 text-indigo-600 px-2 py-0.5 rounded-full">{s}</span>
-                  ))}
-                  {member.skills.length > 4 && <span className="text-[10px] text-slate-400">+{member.skills.length - 4} more</span>}
-                </div>
-              )}
-
-              {isAdmin && member.role !== "admin" && (
-                <button
-                  onClick={() => openPerms(member)}
-                  className="flex items-center gap-1.5 text-xs text-slate-500 hover:text-indigo-600 font-medium transition-colors border-t border-slate-100 pt-3"
-                >
-                  <Shield className="w-3.5 h-3.5" /> Manage Permissions
-                </button>
-              )}
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
@@ -341,7 +449,6 @@ export function TeamView({
         }
       >
         <div className="space-y-5">
-          {/* Feature toggles */}
           <div>
             <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-3">Feature Access</p>
             <div className="space-y-2">
@@ -369,7 +476,6 @@ export function TeamView({
             </div>
           </div>
 
-          {/* Client access (only shown if not "view all") */}
           {!perms.can_view_all_clients && clients && clients.length > 0 && (
             <div>
               <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Client Access</p>
@@ -393,6 +499,36 @@ export function TeamView({
               </div>
             </div>
           )}
+        </div>
+      </Modal>
+
+      {/* Delete Confirmation Modal */}
+      <Modal
+        open={!!deleteTarget}
+        onClose={() => setDeleteTarget(null)}
+        title="Delete Member Permanently"
+        subtitle={deleteTarget?.full_name}
+        size="sm"
+        footer={
+          <>
+            <ModalBtn variant="secondary" onClick={() => setDeleteTarget(null)}>Cancel</ModalBtn>
+            <ModalBtn variant="danger" onClick={handleDelete} disabled={isPending}>
+              {isPending ? "Deleting…" : "Yes, Delete Permanently"}
+            </ModalBtn>
+          </>
+        }
+      >
+        <div className="space-y-3">
+          <div className="bg-rose-50 border border-rose-200 rounded-xl p-4">
+            <p className="text-sm font-semibold text-rose-700 mb-1">This cannot be undone</p>
+            <p className="text-xs text-rose-600">
+              Deleting <strong>{deleteTarget?.full_name}</strong> will permanently remove their account and login access.
+              Their time logs, tasks, and other records will be preserved but unlinked from their profile.
+            </p>
+          </div>
+          <p className="text-xs text-slate-500">
+            If you only want to temporarily block access, use <strong>Disable Access</strong> instead — it preserves everything and can be reversed.
+          </p>
         </div>
       </Modal>
     </div>
