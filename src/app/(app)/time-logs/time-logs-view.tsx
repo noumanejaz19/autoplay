@@ -1,11 +1,14 @@
 "use client";
 
-import { useState, useTransition, useRef, useCallback } from "react";
+import { useState, useTransition, useRef, useCallback, useEffect } from "react";
 import { SectionCard } from "@/components/ui/section-card";
 import { Modal, Field, Input, Textarea, Select, ModalBtn } from "@/components/ui/modal";
 import { useToast } from "@/components/ui/toast";
 import { cn } from "@/lib/utils";
-import { Plus, Clock, Users, BarChart2, DollarSign, Circle, Upload, X, Link as LinkIcon } from "lucide-react";
+import {
+  Plus, Clock, Users, BarChart2, DollarSign, Circle,
+  Upload, X, Link as LinkIcon, Play, Square, Timer,
+} from "lucide-react";
 import type { TimeLog, Client, Project, Profile } from "@/lib/supabase/types";
 import { createTimeLogAction, updateTimeLogAction, deleteTimeLogAction } from "@/app/actions/time-logs";
 import {
@@ -26,6 +29,23 @@ const CAT_COLORS: Record<string, string> = {
   Meeting: "#f43f5e", Support: "#ec4899", Design: "#0ea5e9", Planning: "#84cc16",
 };
 const CATEGORIES = ["Development", "Research", "Deployment", "Communication", "Testing", "Documentation", "Meeting", "Support", "Design", "Planning", "Other"];
+
+const TIMER_KEY = "autoplay_active_timer";
+
+interface TimerState {
+  startedAt: number;
+  description: string;
+  clientId: string;
+  projectId: string;
+  category: string;
+}
+
+function formatTimer(seconds: number) {
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = seconds % 60;
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+}
 
 type Props = {
   timeLogs: TimeLogWithRels[];
@@ -50,6 +70,100 @@ export function TimeLogsView({ timeLogs, clients, projects }: Props) {
   const [isPending, startTransition] = useTransition();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // ── Timer state ──────────────────────────────────────────────────────────
+  const [timerRunning, setTimerRunning] = useState(false);
+  const [timerStart, setTimerStart] = useState<number | null>(null);
+  const [timerElapsed, setTimerElapsed] = useState(0);
+  const [timerForm, setTimerForm] = useState({ description: "", clientId: "", projectId: "", category: "Development" });
+  const [showStopModal, setShowStopModal] = useState(false);
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Restore timer from localStorage on mount
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(TIMER_KEY);
+      if (!raw) return;
+      const saved: TimerState = JSON.parse(raw);
+      const elapsed = Math.floor((Date.now() - saved.startedAt) / 1000);
+      setTimerStart(saved.startedAt);
+      setTimerElapsed(elapsed);
+      setTimerRunning(true);
+      setTimerForm({
+        description: saved.description,
+        clientId: saved.clientId,
+        projectId: saved.projectId,
+        category: saved.category,
+      });
+    } catch {
+      localStorage.removeItem(TIMER_KEY);
+    }
+  }, []);
+
+  // Live counter
+  useEffect(() => {
+    if (timerRunning && timerStart !== null) {
+      intervalRef.current = setInterval(() => {
+        setTimerElapsed(Math.floor((Date.now() - timerStart) / 1000));
+      }, 1000);
+    }
+    return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
+  }, [timerRunning, timerStart]);
+
+  function startTimer() {
+    if (!timerForm.description.trim()) {
+      toastError("Add a description before starting the timer.");
+      return;
+    }
+    const now = Date.now();
+    setTimerStart(now);
+    setTimerElapsed(0);
+    setTimerRunning(true);
+    const state: TimerState = {
+      startedAt: now,
+      description: timerForm.description,
+      clientId: timerForm.clientId,
+      projectId: timerForm.projectId,
+      category: timerForm.category,
+    };
+    localStorage.setItem(TIMER_KEY, JSON.stringify(state));
+  }
+
+  function stopTimer() {
+    setTimerRunning(false);
+    if (intervalRef.current) clearInterval(intervalRef.current);
+    setShowStopModal(true);
+  }
+
+  function discardTimer() {
+    setTimerRunning(false);
+    setTimerStart(null);
+    setTimerElapsed(0);
+    setShowStopModal(false);
+    setTimerForm({ description: "", clientId: "", projectId: "", category: "Development" });
+    localStorage.removeItem(TIMER_KEY);
+  }
+
+  function saveTimer() {
+    const rawHours = timerElapsed / 3600;
+    const hours = Math.max(0.25, Math.round(rawHours * 4) / 4);
+    const fd = new FormData();
+    fd.set("work_date", new Date().toISOString().slice(0, 10));
+    fd.set("hours", String(hours));
+    fd.set("client_id", timerForm.clientId);
+    fd.set("project_id", timerForm.projectId);
+    fd.set("category", timerForm.category);
+    fd.set("work_description", timerForm.description);
+    fd.set("billable", "true");
+
+    startTransition(async () => {
+      const res = await createTimeLogAction(fd);
+      if (res.error) { toastError(res.error); return; }
+      success(`Timer saved — ${hours}h logged.`);
+      discardTimer();
+    });
+  }
+
+  // ── Manual log form ──────────────────────────────────────────────────────
   function f(k: string, v: string) { setForm(p => ({ ...p, [k]: v })); }
 
   function openEdit(log: TimeLogWithRels) {
@@ -103,6 +217,7 @@ export function TimeLogsView({ timeLogs, clients, projects }: Props) {
     });
   }
 
+  // ── Chart data ───────────────────────────────────────────────────────────
   const billableTotal = timeLogs.filter(t => t.billable).reduce((s, t) => s + t.hours, 0);
   const nonBillableTotal = timeLogs.filter(t => !t.billable).reduce((s, t) => s + t.hours, 0);
 
@@ -120,6 +235,9 @@ export function TimeLogsView({ timeLogs, clients, projects }: Props) {
   const members = Array.from(new Set(timeLogs.map(t => t.user?.full_name ?? "Unknown")));
   const filtered = memberFilter === "All" ? timeLogs : timeLogs.filter(t => (t.user?.full_name ?? "Unknown") === memberFilter);
 
+  const activeClient = clients.find(c => c.id === timerForm.clientId);
+  const activeProject = projects.find(p => p.id === timerForm.projectId);
+
   return (
     <div className="space-y-6 animate-fade-in">
       {/* Header */}
@@ -129,9 +247,91 @@ export function TimeLogsView({ timeLogs, clients, projects }: Props) {
           <p className="text-slate-500 text-sm mt-1">{timeLogs.length} entries · {(billableTotal + nonBillableTotal).toFixed(1)}h total</p>
         </div>
         <button onClick={() => setAddOpen(true)} className="flex items-center gap-2 px-4 py-2.5 rounded-xl gradient-indigo text-white text-sm font-medium hover:opacity-90 transition-opacity">
-          <Plus className="w-4 h-4" /> Log Time
+          <Plus className="w-4 h-4" /> Log Time Manually
         </button>
       </div>
+
+      {/* ── Timer Widget ─────────────────────────────────────────────────── */}
+      {timerRunning ? (
+        /* Running state */
+        <div className="bg-gradient-to-br from-indigo-600 to-violet-600 rounded-2xl p-5 text-white shadow-lg">
+          <div className="flex items-center justify-between flex-wrap gap-4">
+            <div className="flex items-center gap-4">
+              <div className="relative flex h-10 w-10 items-center justify-center">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-20" />
+                <Timer className="w-5 h-5 text-white relative" />
+              </div>
+              <div>
+                <p className="text-white/70 text-xs font-medium uppercase tracking-wide">Timer running</p>
+                <p className="font-semibold text-sm truncate max-w-72">{timerForm.description || "No description"}</p>
+                <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                  {activeClient && <span className="text-white/70 text-xs">{activeClient.company_name}</span>}
+                  {activeProject && <><span className="text-white/40 text-xs">·</span><span className="text-white/70 text-xs">{activeProject.project_name}</span></>}
+                  <span className="text-white/40 text-xs">·</span>
+                  <span className="text-white/70 text-xs">{timerForm.category}</span>
+                </div>
+              </div>
+            </div>
+            <div className="flex items-center gap-4">
+              <p className="text-4xl font-mono font-bold tracking-wider tabular-nums">{formatTimer(timerElapsed)}</p>
+              <button
+                onClick={stopTimer}
+                className="flex items-center gap-2 px-5 py-3 bg-white text-indigo-700 rounded-xl text-sm font-semibold hover:bg-white/90 transition-colors"
+              >
+                <Square className="w-4 h-4 fill-current" /> Stop & Save
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : (
+        /* Idle state */
+        <div className="bg-white rounded-2xl border border-slate-200 p-5">
+          <div className="flex items-center gap-2 mb-4">
+            <Timer className="w-4 h-4 text-indigo-500" />
+            <span className="text-sm font-semibold text-slate-700">Start Timer</span>
+            <span className="text-xs text-slate-400 ml-1">— track time like Clockify</span>
+          </div>
+          <div className="flex flex-col sm:flex-row gap-3">
+            <input
+              type="text"
+              placeholder="What are you working on?"
+              value={timerForm.description}
+              onChange={e => setTimerForm(p => ({ ...p, description: e.target.value }))}
+              onKeyDown={e => { if (e.key === "Enter") startTimer(); }}
+              className="flex-1 text-sm border border-slate-200 rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-indigo-300 placeholder:text-slate-400"
+            />
+            <select
+              value={timerForm.clientId}
+              onChange={e => setTimerForm(p => ({ ...p, clientId: e.target.value }))}
+              className="text-sm border border-slate-200 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-indigo-300 text-slate-700 bg-white"
+            >
+              <option value="">Client...</option>
+              {clients.map(c => <option key={c.id} value={c.id}>{c.company_name}</option>)}
+            </select>
+            <select
+              value={timerForm.projectId}
+              onChange={e => setTimerForm(p => ({ ...p, projectId: e.target.value }))}
+              className="text-sm border border-slate-200 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-indigo-300 text-slate-700 bg-white"
+            >
+              <option value="">Project...</option>
+              {projects.map(p => <option key={p.id} value={p.id}>{p.project_name}</option>)}
+            </select>
+            <select
+              value={timerForm.category}
+              onChange={e => setTimerForm(p => ({ ...p, category: e.target.value }))}
+              className="text-sm border border-slate-200 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-indigo-300 text-slate-700 bg-white"
+            >
+              {CATEGORIES.map(c => <option key={c}>{c}</option>)}
+            </select>
+            <button
+              onClick={startTimer}
+              className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-semibold transition-colors whitespace-nowrap"
+            >
+              <Play className="w-4 h-4 fill-current" /> Start
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Summary metrics */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -206,10 +406,7 @@ export function TimeLogsView({ timeLogs, clients, projects }: Props) {
           <div className="p-16 text-center">
             <Clock className="w-12 h-12 mx-auto text-slate-200 mb-4" />
             <h3 className="text-slate-700 font-medium">No time logs yet</h3>
-            <p className="text-slate-400 text-sm mt-1">Start logging time to track your work.</p>
-            <button onClick={() => setAddOpen(true)} className="mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-xl gradient-indigo text-white text-sm font-medium">
-              <Plus className="w-4 h-4" /> Log Time
-            </button>
+            <p className="text-slate-400 text-sm mt-1">Start the timer above or log time manually.</p>
           </div>
         ) : (
           <>
@@ -248,12 +445,57 @@ export function TimeLogsView({ timeLogs, clients, projects }: Props) {
         )}
       </div>
 
-      {/* Add / Edit Modal */}
+      {/* ── Stop & Save Modal ────────────────────────────────────────────── */}
+      <Modal
+        open={showStopModal}
+        onClose={() => { /* don't allow accidental close */ }}
+        title="Save Timer"
+        subtitle="Review your session before saving"
+        size="sm"
+        footer={
+          <>
+            <ModalBtn variant="danger" onClick={discardTimer} disabled={isPending}>Discard</ModalBtn>
+            <ModalBtn onClick={saveTimer} disabled={isPending}>
+              {isPending ? "Saving…" : `Save ${Math.max(0.25, Math.round((timerElapsed / 3600) * 4) / 4)}h`}
+            </ModalBtn>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          {/* Elapsed time display */}
+          <div className="bg-indigo-50 rounded-xl p-4 text-center">
+            <p className="text-3xl font-mono font-bold text-indigo-700 tracking-wider">{formatTimer(timerElapsed)}</p>
+            <p className="text-xs text-indigo-500 mt-1">
+              = {Math.max(0.25, Math.round((timerElapsed / 3600) * 4) / 4)}h logged
+              {timerElapsed < 90 && <span className="ml-1">(minimum 0.25h applied)</span>}
+            </p>
+          </div>
+          {/* Summary */}
+          <div className="space-y-1 text-sm text-slate-700">
+            <p><span className="text-slate-400 text-xs">Description</span><br />{timerForm.description || "—"}</p>
+            {activeClient && <p><span className="text-slate-400 text-xs">Client</span><br />{activeClient.company_name}</p>}
+            {activeProject && <p><span className="text-slate-400 text-xs">Project</span><br />{activeProject.project_name}</p>}
+            <p><span className="text-slate-400 text-xs">Category</span><br />{timerForm.category}</p>
+          </div>
+          {/* Edit description before saving */}
+          <div>
+            <label className="text-xs font-medium text-slate-500">Edit description before saving</label>
+            <textarea
+              value={timerForm.description}
+              onChange={e => setTimerForm(p => ({ ...p, description: e.target.value }))}
+              rows={2}
+              className="mt-1 w-full text-sm border border-slate-200 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-300 resize-none"
+            />
+          </div>
+        </div>
+      </Modal>
+
+      {/* ── Manual Log Modal ─────────────────────────────────────────────── */}
       <Modal
         open={addOpen || !!editLog}
         onClose={closeModals}
-        title={editLog ? "Edit Time Log" : "Log Time"}
-        subtitle={editLog ? `${editLog.work_date} — ${editLog.hours}h` : "Record hours worked for a client or project"}
+        title={editLog ? "Edit Time Log" : "Log Time Manually"}
+        subtitle={editLog ? `${editLog.work_date} — ${editLog.hours}h` : "Record hours for a client or project"}
         size="lg"
         footer={
           <>
