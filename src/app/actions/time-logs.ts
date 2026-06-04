@@ -24,6 +24,28 @@ export async function getTimeLogs() {
   return data ?? [];
 }
 
+// Upload any dragged-in screenshot images to storage and return their URLs.
+async function uploadScreenshots(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabase: any,
+  profileId: string,
+  formData: FormData,
+): Promise<{ urls: string[]; error?: string }> {
+  const files = formData.getAll("screenshot_files").filter((f): f is File => f instanceof File && f.size > 0);
+  const urls: string[] = [];
+  for (const file of files) {
+    const ext = file.name.includes(".") ? file.name.split(".").pop() : "png";
+    const path = `${profileId}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+    const { error: uploadError } = await supabase.storage
+      .from("time-log-screenshots")
+      .upload(path, file, { contentType: file.type || undefined });
+    if (uploadError) return { urls, error: `Screenshot upload failed: ${uploadError.message}` };
+    const { data: urlData } = supabase.storage.from("time-log-screenshots").getPublicUrl(path);
+    urls.push(urlData.publicUrl);
+  }
+  return { urls };
+}
+
 export async function createTimeLogAction(formData: FormData) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -55,6 +77,10 @@ export async function createTimeLogAction(formData: FormData) {
     recordingUrl = urlData.publicUrl;
   }
 
+  // Upload screenshots if provided
+  const { urls: screenshotUrls, error: shotError } = await uploadScreenshots(supabase, profile.id, formData);
+  if (shotError) return { error: shotError };
+
   const insert: TimeLogInsert = {
     user_id: profile.id,
     client_id: String(formData.get("client_id") || "").trim() || null,
@@ -68,6 +94,7 @@ export async function createTimeLogAction(formData: FormData) {
     approved: false,
     approved_by: null,
     recording_url: recordingUrl,
+    screenshot_urls: screenshotUrls,
   };
 
   if (!insert.hours || insert.hours <= 0) return { error: "Hours must be greater than 0." };
@@ -86,18 +113,43 @@ export async function updateTimeLogAction(id: string, formData: FormData) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
+  const { data: profileData } = await supabase
+    .from("profiles")
+    .select("id")
+    .eq("auth_user_id", user.id)
+    .single();
+  const profile = profileData as { id: string } | null;
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const update: Record<string, any> = {
+    client_id: String(formData.get("client_id") || "").trim() || null,
+    project_id: String(formData.get("project_id") || "").trim() || null,
+    task_id: String(formData.get("task_id") || "").trim() || null,
+    work_date: String(formData.get("work_date") || ""),
+    hours: Number(formData.get("hours") || 1),
+    work_description: String(formData.get("work_description") || "").trim() || null,
+    category: String(formData.get("category") || "Development"),
+    billable: formData.get("billable") !== "false",
+  };
+
+  // Append any newly dragged-in screenshots to the existing ones.
+  if (profile) {
+    const { urls: newShots, error: shotError } = await uploadScreenshots(supabase, profile.id, formData);
+    if (shotError) return { error: shotError };
+    if (newShots.length > 0) {
+      const { data: existing } = await supabase
+        .from("time_logs")
+        .select("screenshot_urls")
+        .eq("id", id)
+        .single();
+      const prev = (existing as { screenshot_urls?: string[] } | null)?.screenshot_urls ?? [];
+      update.screenshot_urls = [...prev, ...newShots];
+    }
+  }
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { error } = await (supabase.from("time_logs") as any)
-    .update({
-      client_id: String(formData.get("client_id") || "").trim() || null,
-      project_id: String(formData.get("project_id") || "").trim() || null,
-      task_id: String(formData.get("task_id") || "").trim() || null,
-      work_date: String(formData.get("work_date") || ""),
-      hours: Number(formData.get("hours") || 1),
-      work_description: String(formData.get("work_description") || "").trim() || null,
-      category: String(formData.get("category") || "Development"),
-      billable: formData.get("billable") !== "false",
-    })
+    .update(update)
     .eq("id", id);
 
   if (error) return { error: error.message };

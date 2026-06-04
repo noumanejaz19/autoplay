@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import Link from "next/link";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { ProgressBar } from "@/components/ui/progress-bar";
 import { Avatar } from "@/components/ui/avatar";
@@ -216,7 +217,8 @@ export function ProjectsView({ projects, clients }: { projects: ProjectWithRels[
           {filtered.map(project => {
             const overdue = isOverdue(project);
             return (
-              <div key={project.id} className={cn("bg-white rounded-2xl border p-5 card-hover", overdue ? "border-rose-200" : "border-slate-200")}>
+              <div key={project.id} className={cn("bg-white rounded-2xl border p-5 card-hover relative group", overdue ? "border-rose-200" : "border-slate-200")}>
+                <Link href={`/projects/${project.id}`} className="absolute inset-0 rounded-2xl" aria-label={`Open ${project.project_name}`} />
                 <div className="flex items-start justify-between mb-4">
                   <div className="flex items-start gap-3">
                     {project.client && (
@@ -283,11 +285,11 @@ export function ProjectsView({ projects, clients }: { projects: ProjectWithRels[
                       <span>{project.members?.length ?? 0}</span>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <button onClick={() => openDocs(project)} className="flex items-center gap-1 text-xs text-slate-500 hover:text-indigo-600 font-medium transition-colors">
+                  <div className="flex items-center gap-2 relative z-10">
+                    <button onClick={(e) => { e.preventDefault(); openDocs(project); }} className="flex items-center gap-1 text-xs text-slate-500 hover:text-indigo-600 font-medium transition-colors">
                       <FileText className="w-3 h-3" /> Docs
                     </button>
-                    <button onClick={() => openEdit(project)} className="text-xs text-indigo-600 hover:text-indigo-700 font-medium">Edit</button>
+                    <button onClick={(e) => { e.preventDefault(); openEdit(project); }} className="text-xs text-indigo-600 hover:text-indigo-700 font-medium">Edit</button>
                   </div>
                 </div>
 

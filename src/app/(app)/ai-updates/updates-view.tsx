@@ -1,222 +1,117 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { Modal, Field, Select, Textarea, ModalBtn } from "@/components/ui/modal";
+import { Field, Select } from "@/components/ui/modal";
+import { SectionCard } from "@/components/ui/section-card";
 import { useToast } from "@/components/ui/toast";
-import { cn } from "@/lib/utils";
-import { MessageSquare, Plus, Trash2 } from "lucide-react";
-import type { Client, ClientUpdate } from "@/lib/supabase/types";
-import { createUpdateAction, deleteUpdateAction } from "@/app/actions/updates";
+import { Sparkles, Copy, Check, FolderKanban } from "lucide-react";
+import { generateProjectUpdate } from "@/app/actions/updates";
 
-type UpdateWithPoster = ClientUpdate & {
-  poster: { id: string; full_name: string; profile_photo_url: string | null } | null;
-};
+type ProjectOption = { id: string; project_name: string; client_name: string | null };
 
 type Props = {
-  clients: Pick<Client, "id" | "company_name">[];
-  updates: UpdateWithPoster[];
-  currentProfileId: string | null;
-  currentProfileName: string;
+  projects: ProjectOption[];
 };
 
-const TYPE_COLORS: Record<string, string> = {
-  general: "bg-slate-100 text-slate-600",
-  progress: "bg-indigo-100 text-indigo-700",
-  blocker: "bg-rose-100 text-rose-700",
-  milestone: "bg-emerald-100 text-emerald-700",
-  note: "bg-amber-100 text-amber-700",
-};
-
-const UPDATE_TYPES = ["general", "progress", "blocker", "milestone", "note"] as const;
-
-function initials(name: string) {
-  return name.split(" ").map(w => w[0]).join("").toUpperCase().slice(0, 2);
-}
-
-function timeAgo(dateStr: string) {
-  const diff = Date.now() - new Date(dateStr).getTime();
-  const mins = Math.floor(diff / 60000);
-  if (mins < 60) return `${mins}m ago`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
-  return `${Math.floor(hrs / 24)}d ago`;
-}
-
-export function UpdatesView({ clients, updates, currentProfileId, currentProfileName }: Props) {
+export function UpdatesView({ projects }: Props) {
   const { success, error: toastError } = useToast();
-  const [clientFilter, setClientFilter] = useState<string>("all");
-  const [addOpen, setAddOpen] = useState(false);
-  const [form, setForm] = useState({ client_id: "", content: "", update_type: "general" as typeof UPDATE_TYPES[number] });
+  const [projectId, setProjectId] = useState("");
+  const [generated, setGenerated] = useState("");
+  const [copied, setCopied] = useState(false);
   const [isPending, startTransition] = useTransition();
 
-  function closeModal() { setAddOpen(false); setForm({ client_id: "", content: "", update_type: "general" }); }
-
-  function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    const fd = new FormData(e.currentTarget);
+  function handleGenerate() {
+    if (!projectId) { toastError("Select a project first."); return; }
     startTransition(async () => {
-      const res = await createUpdateAction(fd);
+      const res = await generateProjectUpdate(projectId);
       if (res.error) { toastError(res.error); return; }
-      success("Update posted.");
-      closeModal();
+      setGenerated(res.text ?? "");
+      setCopied(false);
+      success("Update generated.");
     });
   }
 
-  function handleDelete(id: string) {
-    startTransition(async () => {
-      const res = await deleteUpdateAction(id);
-      if (res.error) toastError(res.error);
-      else success("Update deleted.");
-    });
+  async function handleCopy() {
+    if (!generated) return;
+    try {
+      await navigator.clipboard.writeText(generated);
+      setCopied(true);
+      success("Copied — paste it into the group chat.");
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      toastError("Couldn't copy. Select the text and copy manually.");
+    }
   }
 
-  const filtered = clientFilter === "all"
-    ? updates
-    : updates.filter(u => u.client_id === clientFilter);
-
-  const selectedClient = clients.find(c => c.id === clientFilter);
+  const selected = projects.find((p) => p.id === projectId);
 
   return (
     <div className="space-y-6 animate-fade-in">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900">Client Updates</h1>
-          <p className="text-slate-500 text-sm mt-1">Post progress updates, notes, and milestones per client</p>
-        </div>
-        <button
-          onClick={() => setAddOpen(true)}
-          className="flex items-center gap-2 px-4 py-2.5 rounded-xl gradient-indigo text-white text-sm font-medium hover:opacity-90 transition-opacity"
-        >
-          <Plus className="w-4 h-4" /> Post Update
-        </button>
+      <div>
+        <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
+          <Sparkles className="w-6 h-6 text-violet-500" /> AI Updates
+        </h1>
+        <p className="text-slate-500 text-sm mt-1">
+          Pick a project and generate a ready-to-send update from everything on its project page — then send it in the group chat.
+        </p>
       </div>
 
-      {/* Client tabs */}
-      <div className="bg-white rounded-2xl border border-slate-200 p-4">
-        <div className="flex gap-2 flex-wrap">
+      <SectionCard title="Generate an update" icon={FolderKanban}>
+        <div className="flex flex-col sm:flex-row gap-3 sm:items-end">
+          <Field label="Project" className="flex-1">
+            <Select value={projectId} onChange={(e) => setProjectId(e.target.value)}>
+              <option value="">Select a project…</option>
+              {projects.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.project_name}{p.client_name ? ` — ${p.client_name}` : ""}
+                </option>
+              ))}
+            </Select>
+          </Field>
           <button
-            onClick={() => setClientFilter("all")}
-            className={cn("text-xs px-3 py-1.5 rounded-lg font-medium transition-colors",
-              clientFilter === "all" ? "bg-indigo-600 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200")}
+            onClick={handleGenerate}
+            disabled={isPending || !projectId}
+            className="flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl gradient-indigo text-white text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-50 whitespace-nowrap"
           >
-            All Clients
+            <Sparkles className="w-4 h-4" /> {isPending ? "Generating…" : "Generate update"}
           </button>
-          {clients.map(c => (
-            <button
-              key={c.id}
-              onClick={() => setClientFilter(c.id)}
-              className={cn("text-xs px-3 py-1.5 rounded-lg font-medium transition-colors",
-                clientFilter === c.id ? "bg-indigo-600 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200")}
-            >
-              {c.company_name}
-            </button>
-          ))}
         </div>
-      </div>
+      </SectionCard>
 
-      {/* Feed */}
-      <div className="space-y-3">
-        {selectedClient && (
-          <div className="flex items-center gap-2 mb-2">
-            <h2 className="text-sm font-semibold text-slate-700">{selectedClient.company_name}</h2>
-            <span className="text-xs text-slate-400">· {filtered.length} updates</span>
-          </div>
-        )}
-
-        {filtered.length === 0 ? (
-          <div className="bg-white rounded-2xl border border-slate-200 p-16 text-center">
-            <MessageSquare className="w-12 h-12 mx-auto text-slate-200 mb-4" />
-            <h3 className="text-slate-700 font-medium">No updates yet</h3>
-            <p className="text-slate-400 text-sm mt-1">Post the first update for this client.</p>
-            <button onClick={() => setAddOpen(true)} className="mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-xl gradient-indigo text-white text-sm font-medium">
-              <Plus className="w-4 h-4" /> Post Update
+      {/* Generated output */}
+      {generated && (
+        <SectionCard
+          title="Generated update"
+          subtitle={selected ? selected.project_name : undefined}
+          icon={Sparkles}
+          action={
+            <button
+              onClick={handleCopy}
+              className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg bg-indigo-50 text-indigo-600 hover:bg-indigo-100 transition-colors"
+            >
+              {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+              {copied ? "Copied" : "Copy"}
             </button>
-          </div>
-        ) : (
-          filtered.map(update => {
-            const client = clients.find(c => c.id === update.client_id);
-            const isOwn = update.posted_by === currentProfileId;
-            return (
-              <div key={update.id} className="bg-white rounded-2xl border border-slate-200 p-5">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex items-start gap-3 flex-1">
-                    {/* Avatar */}
-                    <div className="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center text-xs font-bold text-indigo-600 flex-shrink-0">
-                      {initials(update.poster?.full_name ?? "?")}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap mb-1">
-                        <span className="text-sm font-semibold text-slate-800">{update.poster?.full_name ?? "Unknown"}</span>
-                        {clientFilter === "all" && client && (
-                          <span className="text-xs text-slate-400">→ {client.company_name}</span>
-                        )}
-                        <span className={cn("text-[10px] font-semibold px-2 py-0.5 rounded-full capitalize", TYPE_COLORS[update.update_type] ?? TYPE_COLORS.general)}>
-                          {update.update_type}
-                        </span>
-                        <span className="text-xs text-slate-400 ml-auto">{timeAgo(update.created_at)}</span>
-                      </div>
-                      <p className="text-sm text-slate-700 leading-relaxed whitespace-pre-wrap">{update.content}</p>
-                    </div>
-                  </div>
-                  {isOwn && (
-                    <button
-                      onClick={() => handleDelete(update.id)}
-                      disabled={isPending}
-                      className="p-1.5 text-slate-300 hover:text-rose-500 hover:bg-rose-50 rounded-lg transition-colors flex-shrink-0"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  )}
-                </div>
-              </div>
-            );
-          })
-        )}
-      </div>
+          }
+        >
+          <textarea
+            value={generated}
+            onChange={(e) => setGenerated(e.target.value)}
+            rows={16}
+            className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-800 bg-slate-50 outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 font-mono leading-relaxed resize-y"
+          />
+          <p className="text-xs text-slate-400 mt-2">Edit anything you like before copying, then paste it into the group chat.</p>
+        </SectionCard>
+      )}
 
-      {/* Post Update Modal */}
-      <Modal
-        open={addOpen}
-        onClose={closeModal}
-        title="Post Update"
-        subtitle="Share progress with the team"
-        size="md"
-        footer={
-          <>
-            <ModalBtn variant="secondary" onClick={closeModal}>Cancel</ModalBtn>
-            <ModalBtn form="update-form" type="submit" disabled={isPending}>
-              {isPending ? "Posting…" : "Post Update"}
-            </ModalBtn>
-          </>
-        }
-      >
-        <form id="update-form" onSubmit={handleSubmit}>
-          <div className="space-y-4">
-            <Field label="Client" required>
-              <Select name="client_id" value={form.client_id} onChange={e => setForm(p => ({ ...p, client_id: e.target.value }))} required>
-                <option value="">Select client...</option>
-                {clients.map(c => <option key={c.id} value={c.id}>{c.company_name}</option>)}
-              </Select>
-            </Field>
-            <Field label="Type">
-              <Select name="update_type" value={form.update_type} onChange={e => setForm(p => ({ ...p, update_type: e.target.value as typeof UPDATE_TYPES[number] }))}>
-                {UPDATE_TYPES.map(t => <option key={t} value={t} className="capitalize">{t.charAt(0).toUpperCase() + t.slice(1)}</option>)}
-              </Select>
-            </Field>
-            <Field label="Message" required>
-              <Textarea
-                name="content"
-                placeholder={`What's the update on this client? (posting as ${currentProfileName || "you"})`}
-                value={form.content}
-                onChange={e => setForm(p => ({ ...p, content: e.target.value }))}
-                required
-                rows={4}
-              />
-            </Field>
-          </div>
-        </form>
-      </Modal>
+      {!generated && (
+        <div className="bg-white rounded-2xl border border-slate-200 p-16 text-center">
+          <Sparkles className="w-12 h-12 mx-auto text-slate-200 mb-4" />
+          <h3 className="text-slate-700 font-medium">No update generated yet</h3>
+          <p className="text-slate-400 text-sm mt-1">Select a project above and hit Generate.</p>
+        </div>
+      )}
     </div>
   );
 }
