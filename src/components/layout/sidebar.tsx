@@ -4,8 +4,8 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import {
-  LayoutDashboard, Users, FolderKanban, CheckSquare, Clock,
-  HardDrive, Link2, AlertTriangle, PackageCheck, UserCog,
+  LayoutDashboard, Users, FolderKanban, Clock,
+  AlertTriangle, PackageCheck, UserCog,
   BarChart3, Sparkles, Settings, ChevronLeft, Zap, Shield,
 } from "lucide-react";
 import { useState } from "react";
@@ -15,10 +15,7 @@ const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/clients", label: "Clients", icon: Users },
   { href: "/projects", label: "Projects", icon: FolderKanban },
-  { href: "/tasks", label: "Tasks", icon: CheckSquare },
   { href: "/time-logs", label: "Time Logs", icon: Clock },
-  { href: "/assets", label: "Client Assets", icon: HardDrive },
-  { href: "/access", label: "Links & Access", icon: Link2 },
   { href: "/blockers", label: "Blockers", icon: AlertTriangle },
   { href: "/deliverables", label: "Deliverables", icon: PackageCheck },
   { href: "/team", label: "Team", icon: UserCog },
