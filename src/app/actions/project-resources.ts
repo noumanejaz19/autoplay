@@ -14,7 +14,7 @@ export async function getProjectResources(projectId: string) {
     .eq("project_id", projectId)
     .order("created_at", { ascending: false });
 
-  if (error) throw new Error(error.message);
+  if (error) return []; // table may not exist yet (migration 004 not run)
   return data ?? [];
 }
 

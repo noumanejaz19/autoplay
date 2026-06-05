@@ -38,6 +38,7 @@ export async function createUpdateAction(formData: FormData) {
     posted_by: profile?.id ?? null,
     content: String(formData.get("content") || "").trim(),
     update_type: (formData.get("update_type") as ClientUpdateInsert["update_type"]) || "general",
+    update_date: String(formData.get("update_date") || "").trim() || new Date().toISOString().slice(0, 10),
   };
 
   if (!insert.client_id || !insert.content) return { error: "Client and message are required." };
@@ -46,7 +47,10 @@ export async function createUpdateAction(formData: FormData) {
   const { error } = await (supabase.from("client_updates") as any).insert(insert);
   if (error) return { error: error.message };
 
+  const clientId = insert.client_id;
   revalidatePath("/updates");
+  revalidatePath(`/clients/${clientId}`);
+  if (insert.project_id) revalidatePath(`/projects/${insert.project_id}`);
   return { success: true };
 }
 

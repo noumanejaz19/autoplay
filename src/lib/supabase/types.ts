@@ -316,6 +316,37 @@ export interface Database {
         Update: Partial<Database["public"]["Tables"]["timeline_entries"]["Row"]>;
         Relationships: [];
       };
+      client_documents: {
+        Row: {
+          id: string;
+          client_id: string;
+          title: string | null;
+          url: string;
+          file_name: string | null;
+          mime_type: string | null;
+          visibility: "admin" | "shared";
+          uploaded_by: string | null;
+          created_at: string;
+        };
+        Insert: Omit<Database["public"]["Tables"]["client_documents"]["Row"], "id" | "created_at"> & { id?: string };
+        Update: Partial<Database["public"]["Tables"]["client_documents"]["Row"]>;
+        Relationships: [];
+      };
+      project_progress_log: {
+        Row: {
+          id: string;
+          project_id: string;
+          percentage: number | null;
+          note: string | null;
+          is_milestone: boolean;
+          milestone_title: string | null;
+          logged_by: string | null;
+          created_at: string;
+        };
+        Insert: Omit<Database["public"]["Tables"]["project_progress_log"]["Row"], "id" | "created_at"> & { id?: string };
+        Update: Partial<Database["public"]["Tables"]["project_progress_log"]["Row"]>;
+        Relationships: [];
+      };
       client_updates: {
         Row: {
           id: string;
@@ -324,6 +355,7 @@ export interface Database {
           posted_by: string | null;
           content: string;
           update_type: "general" | "progress" | "blocker" | "milestone" | "note";
+          update_date: string | null;
           created_at: string;
         };
         Insert: Omit<Database["public"]["Tables"]["client_updates"]["Row"], "id" | "created_at"> & { id?: string };
@@ -406,6 +438,8 @@ export type Deliverable = Database["public"]["Tables"]["deliverables"]["Row"];
 export type Approval = Database["public"]["Tables"]["approvals"]["Row"];
 export type TimelineEntry = Database["public"]["Tables"]["timeline_entries"]["Row"];
 export type ClientUpdate = Database["public"]["Tables"]["client_updates"]["Row"];
+export type ClientDocument = Database["public"]["Tables"]["client_documents"]["Row"];
+export type ProjectProgressLog = Database["public"]["Tables"]["project_progress_log"]["Row"];
 export type UserPermission = Database["public"]["Tables"]["user_permissions"]["Row"];
 export type Notification = Database["public"]["Tables"]["notifications"]["Row"];
 export type AuditLog = Database["public"]["Tables"]["audit_logs"]["Row"];
@@ -425,5 +459,7 @@ export type DeliverableInsert = Database["public"]["Tables"]["deliverables"]["In
 export type ApprovalInsert = Database["public"]["Tables"]["approvals"]["Insert"];
 export type TimelineEntryInsert = Database["public"]["Tables"]["timeline_entries"]["Insert"];
 export type ClientUpdateInsert = Database["public"]["Tables"]["client_updates"]["Insert"];
+export type ClientDocumentInsert = Database["public"]["Tables"]["client_documents"]["Insert"];
+export type ProjectProgressLogInsert = Database["public"]["Tables"]["project_progress_log"]["Insert"];
 export type UserPermissionInsert = Database["public"]["Tables"]["user_permissions"]["Insert"];
 export type NotificationInsert = Database["public"]["Tables"]["notifications"]["Insert"];

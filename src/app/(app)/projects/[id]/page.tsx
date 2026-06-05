@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { ProjectDetailView } from "./project-detail-view";
 import { getProjectById } from "@/app/actions/projects";
 import { getProjectResources } from "@/app/actions/project-resources";
+import { getProjectProgressLog } from "@/app/actions/progress";
 import {
   DEMO_PROJECTS, DEMO_BLOCKERS, DEMO_TIME_LOGS, DEMO_PROFILE,
 } from "@/lib/demo-data";
@@ -23,6 +24,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
         timeLogs={DEMO_TIME_LOGS.filter((t) => t.project_id === id) as any}
         updates={[]}
         resources={[]}
+        progressLog={[]}
         isAdmin={DEMO_PROFILE.role === "admin"}
       />
     );
@@ -44,7 +46,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
     isAdmin = (prof as { role?: string } | null)?.role === "admin";
   }
 
-  const [blockersRes, timeRes, updatesRes, resources] = await Promise.all([
+  const [blockersRes, timeRes, updatesRes, resources, progressLog] = await Promise.all([
     supabase
       .from("blockers")
       .select("*, responsible:responsible_user_id ( id, full_name )")
@@ -61,6 +63,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
       .eq("project_id", id)
       .order("created_at", { ascending: false }),
     getProjectResources(id),
+    getProjectProgressLog(id),
   ]);
 
   return (
@@ -75,6 +78,8 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
       updates={(updatesRes.data ?? []) as any}
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       resources={resources as any}
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      progressLog={progressLog as any}
       isAdmin={isAdmin}
     />
   );
