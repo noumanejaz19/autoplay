@@ -50,7 +50,7 @@ export function Topbar({ profile }: TopbarProps) {
           <Search className="w-4 h-4 text-slate-400 flex-shrink-0" />
           <input
             type="text"
-            placeholder="Search clients, tasks, access, blockers…"
+            placeholder="Search clients, projects, blockers…"
             className="flex-1 bg-transparent text-sm text-slate-700 placeholder:text-slate-400 outline-none"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
@@ -65,7 +65,7 @@ export function Topbar({ profile }: TopbarProps) {
 
         {focused && query.length >= 2 && (
           <div className="absolute top-full left-0 right-0 mt-2 bg-white border border-slate-200 rounded-2xl shadow-xl p-6 text-center z-50 animate-fade-in">
-            <p className="text-sm text-slate-500">Start typing to search across clients, projects, tasks…</p>
+            <p className="text-sm text-slate-500">Start typing to search across clients, projects, blockers…</p>
             <p className="text-xs text-slate-400 mt-1">Full search coming soon</p>
           </div>
         )}

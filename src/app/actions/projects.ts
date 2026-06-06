@@ -23,6 +23,26 @@ export async function getProjects() {
   return data ?? [];
 }
 
+export async function getProjectById(id: string) {
+  if (process.env.NEXT_PUBLIC_DEMO_MODE === "true") {
+    return DEMO_PROJECTS.find((p) => p.id === id) ?? null;
+  }
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("projects")
+    .select(`
+      *,
+      client:client_id ( id, company_name, contact_person_name ),
+      manager:project_manager_id ( id, full_name, profile_photo_url ),
+      members:project_members ( user_id, project_role, profile:user_id ( id, full_name, profile_photo_url ) )
+    `)
+    .eq("id", id)
+    .single();
+
+  if (error) return null;
+  return data;
+}
+
 export async function createProjectAction(formData: FormData) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -51,6 +71,8 @@ export async function createProjectAction(formData: FormData) {
     budget: null,
     tags: formData.get("tags") ? String(formData.get("tags")).split(",").map(t => t.trim()).filter(Boolean) : [],
     internal_notes: String(formData.get("internal_notes") || "").trim() || null,
+    admin_notes: null,
+    employee_notes: null,
     overdue_reason: null,
     employee_category: String(formData.get("employee_category") || "").trim() || null,
     created_by: profile?.id ?? null,
@@ -111,5 +133,26 @@ export async function updateProjectAction(id: string, formData: FormData) {
   revalidatePath("/projects");
   revalidatePath(`/projects/${id}`);
   revalidatePath("/dashboard");
+  return { success: true };
+}
+
+// Save the admin or employee notes for a project. Both roles can read and
+// write both note areas (they live in separate boxes on the project page).
+export async function updateProjectNotesAction(id: string, kind: "admin" | "employee", content: string) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const column = kind === "admin" ? "admin_notes" : "employee_notes";
+  const value = content.trim() || null;
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error } = await (supabase.from("projects") as any)
+    .update({ [column]: value })
+    .eq("id", id);
+
+  if (error) return { error: error.message };
+
+  revalidatePath(`/projects/${id}`);
   return { success: true };
 }

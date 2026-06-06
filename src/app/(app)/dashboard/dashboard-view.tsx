@@ -6,7 +6,7 @@ import { StatusBadge } from "@/components/ui/status-badge";
 import { Avatar } from "@/components/ui/avatar";
 import {
   Users, FolderKanban, CheckSquare, AlertTriangle, Clock,
-  PackageCheck, TrendingUp, Sparkles, ArrowRight, Activity, Shield,
+  PackageCheck, TrendingUp, Sparkles, ArrowRight,
 } from "lucide-react";
 import Link from "next/link";
 import {
@@ -70,8 +70,7 @@ export function DashboardView({ profile, stats, clients, projectStatusData, clie
       {/* Metric cards row 2 */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <MetricCard title="Hours Logged (Week)" value={`${stats.hoursThisWeek}h`} subtitle="Across all clients" icon={Clock} iconColor="text-emerald-600" iconBg="bg-emerald-50" />
-        <MetricCard title="Completed Deliverables" value={stats.completedDeliverables} subtitle="Approved by clients" icon={PackageCheck} iconColor="text-teal-600" iconBg="bg-teal-50" />
-        <MetricCard title="Access Pending" value={stats.accessPending} subtitle="Need action" icon={Shield} iconColor="text-amber-600" iconBg="bg-amber-50" />
+        <MetricCard title="Total Projects" value={stats.totalProjects} subtitle={`${stats.activeProjects} in progress`} icon={PackageCheck} iconColor="text-teal-600" iconBg="bg-teal-50" />
         <MetricCard title="Team Members" value={teamHoursData.length} subtitle="Active this week" icon={Users} iconColor="text-indigo-600" iconBg="bg-indigo-50" />
       </div>
 

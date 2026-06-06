@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import {
   LayoutDashboard, Users, FolderKanban, Clock,
-  AlertTriangle, PackageCheck, UserCog,
+  AlertTriangle, UserCog,
   BarChart3, Sparkles, Settings, ChevronLeft, Zap, Shield,
 } from "lucide-react";
 import { useState } from "react";
@@ -17,7 +17,6 @@ const navItems = [
   { href: "/projects", label: "Projects", icon: FolderKanban },
   { href: "/time-logs", label: "Time Logs", icon: Clock },
   { href: "/blockers", label: "Blockers", icon: AlertTriangle },
-  { href: "/deliverables", label: "Deliverables", icon: PackageCheck },
   { href: "/team", label: "Team", icon: UserCog },
   { href: "/reports", label: "Reports", icon: BarChart3 },
   { href: "/ai-updates", label: "AI Updates", icon: Sparkles },

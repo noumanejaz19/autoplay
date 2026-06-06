@@ -2,7 +2,8 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { ClientDetailView } from "./client-detail-view";
 import type { Client, Project, Blocker, TimeLog } from "@/lib/supabase/types";
-import { DEMO_CLIENTS, DEMO_PROJECTS, DEMO_BLOCKERS, DEMO_TIME_LOGS } from "@/lib/demo-data";
+import { getClientDocuments } from "@/app/actions/client-documents";
+import { DEMO_CLIENTS, DEMO_PROJECTS, DEMO_BLOCKERS, DEMO_TIME_LOGS, DEMO_PROFILE } from "@/lib/demo-data";
 
 export default async function ClientDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -19,6 +20,10 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
         projects={projects as unknown as Project[]}
         blockers={blockers as unknown as Blocker[]}
         timeLogs={timeLogs as unknown as TimeLog[]}
+        documents={[]}
+        updates={[]}
+        isAdmin={DEMO_PROFILE.role === "admin"}
+        currentProfileId={DEMO_PROFILE.id}
       />
     );
   }
@@ -33,7 +38,21 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
 
   if (clientError || !client) notFound();
 
-  const [projectsRes, blockersRes, timeLogsRes] = await Promise.all([
+  const { data: { user } } = await supabase.auth.getUser();
+  let isAdmin = false;
+  let currentProfileId: string | null = null;
+  if (user) {
+    const { data: prof } = await supabase
+      .from("profiles")
+      .select("id, role")
+      .eq("auth_user_id", user.id)
+      .single();
+    const p = prof as { id: string; role: string } | null;
+    isAdmin = p?.role === "admin";
+    currentProfileId = p?.id ?? null;
+  }
+
+  const [projectsRes, blockersRes, timeLogsRes, updatesRes, documents] = await Promise.all([
     supabase
       .from("projects")
       .select("*, manager:project_manager_id(id, full_name)")
@@ -49,6 +68,13 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
       .select("*, user:user_id(id, full_name)")
       .eq("client_id", id)
       .order("work_date", { ascending: false }),
+    supabase
+      .from("client_updates")
+      .select("*, poster:posted_by(id, full_name, profile_photo_url)")
+      .eq("client_id", id)
+      .order("update_date", { ascending: false })
+      .order("created_at", { ascending: false }),
+    getClientDocuments(id),
   ]);
 
   return (
@@ -57,6 +83,12 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
       projects={(projectsRes.data ?? []) as unknown as Project[]}
       blockers={(blockersRes.data ?? []) as unknown as Blocker[]}
       timeLogs={(timeLogsRes.data ?? []) as unknown as TimeLog[]}
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      documents={(documents ?? []) as any}
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      updates={(updatesRes.data ?? []) as any}
+      isAdmin={isAdmin}
+      currentProfileId={currentProfileId}
     />
   );
 }

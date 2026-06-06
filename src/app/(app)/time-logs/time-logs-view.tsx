@@ -7,7 +7,7 @@ import { useToast } from "@/components/ui/toast";
 import { cn } from "@/lib/utils";
 import {
   Plus, Clock, Users, BarChart2, DollarSign, Circle,
-  Upload, X, Link as LinkIcon, Play, Square, Timer,
+  Upload, X, Link as LinkIcon, Play, Square, Timer, Image as ImageIcon,
 } from "lucide-react";
 import type { TimeLog, Client, Project, Profile } from "@/lib/supabase/types";
 import { createTimeLogAction, updateTimeLogAction, deleteTimeLogAction } from "@/app/actions/time-logs";
@@ -66,9 +66,12 @@ export function TimeLogsView({ timeLogs, clients, projects }: Props) {
   const [editLog, setEditLog] = useState<TimeLogWithRels | null>(null);
   const [form, setForm] = useState(BLANK);
   const [recordingFile, setRecordingFile] = useState<File | null>(null);
+  const [screenshots, setScreenshots] = useState<File[]>([]);
   const [isDragging, setIsDragging] = useState(false);
+  const [isShotDragging, setIsShotDragging] = useState(false);
   const [isPending, startTransition] = useTransition();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const shotInputRef = useRef<HTMLInputElement>(null);
 
   // ── Timer state ──────────────────────────────────────────────────────────
   const [timerRunning, setTimerRunning] = useState(false);
@@ -178,10 +181,11 @@ export function TimeLogsView({ timeLogs, clients, projects }: Props) {
       category: log.category,
     });
     setRecordingFile(null);
+    setScreenshots([]);
     setEditLog(log);
   }
 
-  function closeModals() { setAddOpen(false); setEditLog(null); setForm(BLANK); setRecordingFile(null); }
+  function closeModals() { setAddOpen(false); setEditLog(null); setForm(BLANK); setRecordingFile(null); setScreenshots([]); }
 
   const onDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -191,6 +195,19 @@ export function TimeLogsView({ timeLogs, clients, projects }: Props) {
     else toastError("Please drop a video file.");
   }, [toastError]);
 
+  const addScreenshots = useCallback((files: FileList | null) => {
+    if (!files) return;
+    const images = Array.from(files).filter(f => f.type.startsWith("image/"));
+    if (images.length === 0) { toastError("Please drop image files (screenshots)."); return; }
+    setScreenshots(prev => [...prev, ...images]);
+  }, [toastError]);
+
+  const onShotDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setIsShotDragging(false);
+    addScreenshots(e.dataTransfer.files);
+  }, [addScreenshots]);
+
   function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (!form.work_description.trim()) {
@@ -199,6 +216,7 @@ export function TimeLogsView({ timeLogs, clients, projects }: Props) {
     }
     const fd = new FormData(e.currentTarget);
     if (recordingFile) fd.set("recording_file", recordingFile);
+    screenshots.forEach(file => fd.append("screenshot_files", file));
     startTransition(async () => {
       const res = editLog
         ? await updateTimeLogAction(editLog.id, fd)
@@ -601,6 +619,65 @@ export function TimeLogsView({ timeLogs, clients, projects }: Props) {
                       if (file) setRecordingFile(file);
                     }}
                   />
+                </div>
+              )}
+            </Field>
+
+            {/* Screenshots of work done */}
+            <Field label="Screenshots" hint="Optional — drag in screenshots of what was done for this entry" className="sm:col-span-2">
+              <div
+                onDragOver={e => { e.preventDefault(); setIsShotDragging(true); }}
+                onDragLeave={() => setIsShotDragging(false)}
+                onDrop={onShotDrop}
+                onClick={() => shotInputRef.current?.click()}
+                className={cn(
+                  "border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-colors",
+                  isShotDragging ? "border-indigo-400 bg-indigo-50" : "border-slate-200 hover:border-indigo-300 hover:bg-slate-50"
+                )}
+              >
+                <div className="flex flex-col items-center gap-2">
+                  <ImageIcon className="w-6 h-6 text-slate-300" />
+                  <p className="text-sm text-slate-500">Drop screenshots here, or <span className="text-indigo-600 font-medium">browse</span></p>
+                  <p className="text-xs text-slate-400">PNG, JPG, GIF, WebP</p>
+                </div>
+                <input
+                  ref={shotInputRef}
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  className="hidden"
+                  onChange={e => addScreenshots(e.target.files)}
+                />
+              </div>
+
+              {/* Existing screenshots (when editing) */}
+              {editLog?.screenshot_urls && editLog.screenshot_urls.length > 0 && (
+                <div className="flex flex-wrap gap-2 mt-3">
+                  {editLog.screenshot_urls.map((url, i) => (
+                    <a key={url} href={url} target="_blank" rel="noopener noreferrer" className="block">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={url} alt={`Screenshot ${i + 1}`} className="w-16 h-16 object-cover rounded-lg border border-slate-200 hover:border-indigo-300" />
+                    </a>
+                  ))}
+                </div>
+              )}
+
+              {/* Newly added screenshots (pending upload) */}
+              {screenshots.length > 0 && (
+                <div className="flex flex-wrap gap-2 mt-3">
+                  {screenshots.map((file, i) => (
+                    <div key={i} className="relative">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={URL.createObjectURL(file)} alt={file.name} className="w-16 h-16 object-cover rounded-lg border border-indigo-200" />
+                      <button
+                        type="button"
+                        onClick={e => { e.stopPropagation(); setScreenshots(prev => prev.filter((_, idx) => idx !== i)); }}
+                        className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-white border border-slate-200 rounded-full flex items-center justify-center shadow-sm hover:bg-slate-50"
+                      >
+                        <X className="w-3 h-3 text-slate-500" />
+                      </button>
+                    </div>
+                  ))}
                 </div>
               )}
             </Field>
