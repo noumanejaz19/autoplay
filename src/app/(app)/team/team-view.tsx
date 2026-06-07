@@ -7,10 +7,10 @@ import { useToast } from "@/components/ui/toast";
 import { cn } from "@/lib/utils";
 import {
   Search, Users, Mail, Phone, MapPin, Briefcase, UserPlus, Shield,
-  MoreVertical, UserX, UserCheck, Trash2,
+  MoreVertical, UserX, UserCheck, Trash2, KeyRound, Copy, Check,
 } from "lucide-react";
 import type { Profile } from "@/lib/supabase/types";
-import { inviteUserAction, disableUserAction, reactivateUserAction, deleteUserAction } from "@/app/actions/profiles";
+import { inviteUserAction, disableUserAction, reactivateUserAction, deleteUserAction, resetUserPasswordAction } from "@/app/actions/profiles";
 import { getPermissions, updatePermissionsAction } from "@/app/actions/permissions";
 
 function initials(name: string) {
@@ -64,6 +64,9 @@ export function TeamView({
   const [perms, setPerms] = useState<PermState>(DEFAULT_PERMS);
   const [menuOpen, setMenuOpen] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Profile | null>(null);
+  const [resetTarget, setResetTarget] = useState<Profile | null>(null);
+  const [resetPassword, setResetPassword] = useState("");
+  const [resetCopied, setResetCopied] = useState(false);
   const [isPending, startTransition] = useTransition();
 
   const departments = Array.from(new Set(profiles.map(p => p.department).filter(Boolean))) as string[];
@@ -163,6 +166,45 @@ export function TeamView({
       success(`${deleteTarget.full_name} has been permanently deleted.`);
       setDeleteTarget(null);
     });
+  }
+
+  function openReset(member: Profile) {
+    setMenuOpen(null);
+    setResetPassword("");
+    setResetCopied(false);
+    setResetTarget(member);
+  }
+
+  function generatePassword() {
+    const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789!@#$";
+    let out = "";
+    const arr = new Uint32Array(14);
+    crypto.getRandomValues(arr);
+    for (let i = 0; i < 14; i++) out += chars[arr[i] % chars.length];
+    setResetPassword(out);
+    setResetCopied(false);
+  }
+
+  function handleResetPassword() {
+    if (!resetTarget) return;
+    startTransition(async () => {
+      const res = await resetUserPasswordAction(resetTarget.id, resetPassword);
+      if (res.error) { toastError(res.error); return; }
+      success(`Password updated for ${resetTarget.full_name}. Share it with them securely.`);
+      setResetTarget(null);
+      setResetPassword("");
+      setResetCopied(false);
+    });
+  }
+
+  async function copyResetPassword() {
+    try {
+      await navigator.clipboard.writeText(resetPassword);
+      setResetCopied(true);
+      setTimeout(() => setResetCopied(false), 2000);
+    } catch {
+      toastError("Couldn't copy — select and copy manually.");
+    }
   }
 
   const PERM_TOGGLES: { key: keyof PermState; label: string; hint: string }[] = [
@@ -319,6 +361,12 @@ export function TeamView({
                                 <UserX className="w-3.5 h-3.5" /> Disable Access
                               </button>
                             )}
+                            <button
+                              onClick={() => openReset(member)}
+                              className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 transition-colors"
+                            >
+                              <KeyRound className="w-3.5 h-3.5 text-slate-400" /> Reset Password
+                            </button>
                             <div className="border-t border-slate-100 my-1" />
                             <button
                               onClick={() => { setMenuOpen(null); setDeleteTarget(member); }}
@@ -529,6 +577,55 @@ export function TeamView({
           <p className="text-xs text-slate-500">
             If you only want to temporarily block access, use <strong>Disable Access</strong> instead — it preserves everything and can be reversed.
           </p>
+        </div>
+      </Modal>
+
+      {/* Reset Password Modal (admin only) */}
+      <Modal
+        open={!!resetTarget}
+        onClose={() => setResetTarget(null)}
+        title="Reset Password"
+        subtitle={resetTarget?.full_name}
+        size="sm"
+        footer={
+          <>
+            <ModalBtn variant="secondary" onClick={() => setResetTarget(null)}>Cancel</ModalBtn>
+            <ModalBtn onClick={handleResetPassword} disabled={isPending || resetPassword.length < 8}>
+              {isPending ? "Saving…" : "Set Password"}
+            </ModalBtn>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-slate-600">
+            Set a new password for <strong>{resetTarget?.full_name}</strong> so they can log in. Only admins can change a member&apos;s password — share the new one with them securely.
+          </p>
+          <Field label="New password" hint="At least 8 characters">
+            <div className="flex gap-2">
+              <Input
+                value={resetPassword}
+                onChange={(e) => { setResetPassword(e.target.value); setResetCopied(false); }}
+                placeholder="Type or generate a password"
+                className="flex-1"
+              />
+              <button
+                type="button"
+                onClick={copyResetPassword}
+                disabled={!resetPassword}
+                className="px-3 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-40"
+                title="Copy"
+              >
+                {resetCopied ? <Check className="w-4 h-4 text-emerald-500" /> : <Copy className="w-4 h-4" />}
+              </button>
+            </div>
+          </Field>
+          <button
+            type="button"
+            onClick={generatePassword}
+            className="flex items-center gap-1.5 text-xs font-medium text-indigo-600 hover:text-indigo-700"
+          >
+            <KeyRound className="w-3.5 h-3.5" /> Generate a strong password
+          </button>
         </div>
       </Modal>
     </div>

@@ -117,7 +117,8 @@ export async function inviteUserAction(formData: FormData) {
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3001";
   const { data: inviteData, error: inviteError } = await admin.auth.admin.inviteUserByEmail(email, {
     data: { full_name: fullName },
-    redirectTo: `${appUrl}/auth/callback`,
+    // Send them to the set-password page after they accept, so they can log in later.
+    redirectTo: `${appUrl}/auth/callback?next=/set-password`,
   });
 
   if (inviteError) return { error: inviteError.message };
@@ -193,6 +194,31 @@ export async function reactivateUserAction(profileId: string) {
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   await (admin.from("profiles") as any).update({ is_active: true }).eq("id", profileId);
+
+  revalidatePath("/team");
+  return { success: true };
+}
+
+// Admin-only: set/reset a team member's password so they can log in.
+// Only admins can change a user's password.
+export async function resetUserPasswordAction(profileId: string, newPassword: string) {
+  const { isAdmin, supabase } = await getCallerIsAdmin();
+  if (!isAdmin) return { error: "Only admins can reset passwords." };
+
+  if (!newPassword || newPassword.length < 8) {
+    return { error: "Password must be at least 8 characters." };
+  }
+
+  const { data: profileData } = await supabase
+    .from("profiles").select("auth_user_id").eq("id", profileId).single();
+  const profile = profileData as { auth_user_id: string | null } | null;
+  if (!profile?.auth_user_id) return { error: "This member has no auth account yet." };
+
+  const admin = createAdminClient();
+  const { error } = await admin.auth.admin.updateUserById(profile.auth_user_id, {
+    password: newPassword,
+  });
+  if (error) return { error: error.message };
 
   revalidatePath("/team");
   return { success: true };
