@@ -119,7 +119,11 @@ export async function updateProjectAction(id: string, formData: FormData) {
       expected_due_date: String(formData.get("expected_due_date") || "").trim() || null,
       status: String(formData.get("status") || "Discovery"),
       priority: (formData.get("priority") as ProjectInsert["priority"]) || "Medium",
-      progress_percentage: Number(formData.get("progress_percentage") || 0),
+      // progress_percentage is managed via the Progress & milestones log
+      // (logProgressAction) — never reset it from the edit form.
+      ...(formData.get("progress_percentage") != null
+        ? { progress_percentage: Number(formData.get("progress_percentage")) }
+        : {}),
       estimated_hours: formData.get("estimated_hours") ? Number(formData.get("estimated_hours")) : null,
       tags: formData.get("tags") ? String(formData.get("tags")).split(",").map(t => t.trim()).filter(Boolean) : [],
       internal_notes: String(formData.get("internal_notes") || "").trim() || null,

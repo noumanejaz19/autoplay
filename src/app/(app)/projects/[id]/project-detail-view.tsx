@@ -143,6 +143,8 @@ export function ProjectDetailView({ project, blockers, timeLogs, updates, resour
 
   // Chronological (oldest→newest) percentages, to compute the delta per entry.
   const pctEntries = [...progressLog].filter((e) => e.percentage !== null && e.percentage !== undefined).reverse();
+  // Display the latest logged % (the log is the source of truth); fall back to the stored field.
+  const displayProgress = pctEntries.length ? pctEntries[pctEntries.length - 1].percentage : (project.progress_percentage ?? 0);
 
   function logProgress(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -198,9 +200,9 @@ export function ProjectDetailView({ project, blockers, timeLogs, updates, resour
         <div className="mt-4">
           <div className="flex items-center justify-between text-xs mb-1.5">
             <span className="text-slate-500">Progress</span>
-            <span className="font-semibold text-slate-700">{project.progress_percentage}%</span>
+            <span className="font-semibold text-slate-700">{displayProgress}%</span>
           </div>
-          <ProgressBar value={project.progress_percentage} size="md" />
+          <ProgressBar value={displayProgress} size="md" />
         </div>
 
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-5">
