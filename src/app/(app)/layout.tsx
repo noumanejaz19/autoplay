@@ -18,6 +18,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       redirect("/login");
     }
 
+    // Invited users must set a password before using the app.
+    if (user.user_metadata?.must_set_password) {
+      redirect("/set-password");
+    }
+
     const { data } = await supabase
       .from("profiles")
       .select("id, full_name, email, role, profile_photo_url, availability_status")

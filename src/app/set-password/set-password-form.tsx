@@ -22,7 +22,10 @@ export function SetPasswordForm({ email }: { email: string | null }) {
 
     startTransition(async () => {
       const supabase = createClient();
-      const { error } = await supabase.auth.updateUser({ password });
+      const { error } = await supabase.auth.updateUser({
+        password,
+        data: { must_set_password: false },
+      });
       if (error) { setError(error.message); return; }
       setDone(true);
       setTimeout(() => { router.push("/dashboard"); router.refresh(); }, 1200);

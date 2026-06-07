@@ -116,8 +116,9 @@ export async function inviteUserAction(formData: FormData) {
   // Send the invite email via Supabase Auth
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3001";
   const { data: inviteData, error: inviteError } = await admin.auth.admin.inviteUserByEmail(email, {
-    data: { full_name: fullName },
-    // Send them to the set-password page after they accept, so they can log in later.
+    // must_set_password flags them so the app forces a set-password step on
+    // first entry (more reliable than depending on the redirect URL surviving).
+    data: { full_name: fullName, must_set_password: true },
     redirectTo: `${appUrl}/auth/callback?next=/set-password`,
   });
 
