@@ -119,7 +119,9 @@ export async function inviteUserAction(formData: FormData) {
     // must_set_password flags them so the app forces a set-password step on
     // first entry (more reliable than depending on the redirect URL surviving).
     data: { full_name: fullName, must_set_password: true },
-    redirectTo: `${appUrl}/auth/callback?next=/set-password`,
+    // Client page that reads the invite tokens from the URL hash (implicit
+    // flow) and establishes the session, then routes to set-password.
+    redirectTo: `${appUrl}/auth/accept`,
   });
 
   if (inviteError) return { error: inviteError.message };
