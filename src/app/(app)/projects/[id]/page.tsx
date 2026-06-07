@@ -4,6 +4,8 @@ import { ProjectDetailView } from "./project-detail-view";
 import { getProjectById } from "@/app/actions/projects";
 import { getProjectResources } from "@/app/actions/project-resources";
 import { getProjectProgressLog } from "@/app/actions/progress";
+import { getProfiles } from "@/app/actions/profiles";
+import type { Profile } from "@/lib/supabase/types";
 import {
   DEMO_PROJECTS, DEMO_BLOCKERS, DEMO_TIME_LOGS, DEMO_PROFILE,
 } from "@/lib/demo-data";
@@ -25,6 +27,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
         updates={[]}
         resources={[]}
         progressLog={[]}
+        team={[]}
         isAdmin={DEMO_PROFILE.role === "admin"}
       />
     );
@@ -66,6 +69,12 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
     getProjectProgressLog(id),
   ]);
 
+  const team = isAdmin
+    ? (await getProfiles() as Profile[])
+        .filter((p) => p.is_active !== false)
+        .map((p) => ({ id: p.id, full_name: p.full_name, role: p.role }))
+    : [];
+
   return (
     <ProjectDetailView
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -80,6 +89,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
       resources={resources as any}
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       progressLog={progressLog as any}
+      team={team}
       isAdmin={isAdmin}
     />
   );

@@ -18,7 +18,7 @@ import { cn } from "@/lib/utils";
 import {
   uploadProjectFileAction, addProjectLoomAction, deleteProjectResourceAction,
 } from "@/app/actions/project-resources";
-import { updateProjectNotesAction } from "@/app/actions/projects";
+import { updateProjectNotesAction, setProjectMembersAction } from "@/app/actions/projects";
 import { logProgressAction } from "@/app/actions/progress";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -29,6 +29,7 @@ interface Props {
   updates: any[];
   resources: any[];
   progressLog: any[];
+  team: { id: string; full_name: string; role: string }[];
   isAdmin: boolean;
 }
 
@@ -56,7 +57,7 @@ function timeAgo(dateStr: string) {
   return `${Math.floor(hrs / 24)}d ago`;
 }
 
-export function ProjectDetailView({ project, blockers, timeLogs, updates, resources, progressLog, isAdmin }: Props) {
+export function ProjectDetailView({ project, blockers, timeLogs, updates, resources, progressLog, team, isAdmin }: Props) {
   const router = useRouter();
   const { success, error: toastError } = useToast();
   const [isPending, startTransition] = useTransition();
@@ -114,6 +115,24 @@ export function ProjectDetailView({ project, blockers, timeLogs, updates, resour
       const res = await deleteProjectResourceAction(id, project.id);
       if (res?.error) { toastError(res.error); return; }
       success("Removed.");
+      router.refresh();
+    });
+  }
+
+  // ── Assign members ─────────────────────────────────────────────────────
+  const [assignOpen, setAssignOpen] = useState(false);
+  const [assignedIds, setAssignedIds] = useState<string[]>((project.members ?? []).map((m: any) => m.user_id));
+
+  function toggleAssigned(id: string) {
+    setAssignedIds((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]);
+  }
+
+  function saveAssignment() {
+    startTransition(async () => {
+      const res = await setProjectMembersAction(project.id, assignedIds);
+      if (res?.error) { toastError(res.error); return; }
+      success("Assignment updated.");
+      setAssignOpen(false);
       router.refresh();
     });
   }
@@ -253,7 +272,15 @@ export function ProjectDetailView({ project, blockers, timeLogs, updates, resour
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* ── Assigned to ───────────────────────────────────────────────── */}
-        <SectionCard title="Who it's assigned to" icon={Users}>
+        <SectionCard
+          title="Who it's assigned to"
+          icon={Users}
+          action={isAdmin ? (
+            <button onClick={() => { setAssignedIds((project.members ?? []).map((m: any) => m.user_id)); setAssignOpen(true); }} className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 transition-colors">
+              <Plus className="w-3.5 h-3.5" /> Assign
+            </button>
+          ) : undefined}
+        >
           {project.manager?.full_name && (
             <div className="flex items-center gap-2 mb-3 text-sm">
               <span className="text-slate-400 text-xs">Lead:</span>
@@ -462,6 +489,39 @@ export function ProjectDetailView({ project, blockers, timeLogs, updates, resour
             <Input placeholder="https://www.loom.com/share/..." value={loomForm.url} onChange={(e) => setLoomForm((p) => ({ ...p, url: e.target.value }))} required />
           </Field>
         </form>
+      </Modal>
+
+      {/* ── Assign Members Modal ────────────────────────────────────────── */}
+      <Modal
+        open={assignOpen}
+        onClose={() => setAssignOpen(false)}
+        title="Assign team members"
+        subtitle={project.project_name}
+        size="sm"
+        footer={
+          <>
+            <ModalBtn variant="secondary" onClick={() => setAssignOpen(false)}>Cancel</ModalBtn>
+            <ModalBtn onClick={saveAssignment} disabled={isPending}>{isPending ? "Saving…" : "Save"}</ModalBtn>
+          </>
+        }
+      >
+        <div className="space-y-3">
+          <p className="text-sm text-slate-600">Assigned members can see this project and log progress, blockers and updates on it.</p>
+          {team.length === 0 ? (
+            <p className="text-sm text-slate-400">No team members yet. Add members on the Team page.</p>
+          ) : (
+            <div className="space-y-1.5 max-h-72 overflow-y-auto">
+              {team.map((m) => (
+                <label key={m.id} className={cn("flex items-center gap-3 px-3 py-2 rounded-xl cursor-pointer text-sm transition-colors", assignedIds.includes(m.id) ? "bg-indigo-50 text-indigo-700" : "hover:bg-slate-50 text-slate-700")}>
+                  <input type="checkbox" checked={assignedIds.includes(m.id)} onChange={() => toggleAssigned(m.id)} className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-300" />
+                  <span className="w-7 h-7 rounded-full bg-indigo-100 flex items-center justify-center text-[11px] font-bold text-indigo-600 flex-shrink-0">{initials(m.full_name)}</span>
+                  <span className="truncate flex-1">{m.full_name}</span>
+                  {m.role === "admin" && <span className="text-[9px] uppercase font-semibold text-slate-400">Admin</span>}
+                </label>
+              ))}
+            </div>
+          )}
+        </div>
       </Modal>
 
       {/* ── Log Progress Modal ──────────────────────────────────────────── */}

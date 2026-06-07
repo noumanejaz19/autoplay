@@ -10,7 +10,7 @@ import { useToast } from "@/components/ui/toast";
 import { Plus, Search, FolderKanban, Clock, Calendar, Users, AlertOctagon, FileText } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { Project, Client } from "@/lib/supabase/types";
-import { createProjectAction, updateProjectAction } from "@/app/actions/projects";
+import { createProjectAction, updateProjectAction, setProjectMembersAction } from "@/app/actions/projects";
 import { upsertProjectDocumentAction, getProjectDocuments } from "@/app/actions/project-documents";
 
 type ProjectWithRels = Project & {
@@ -56,8 +56,11 @@ const BLANK = {
   internal_notes: "", overdue_reason: "", employee_category: "",
 };
 
-export function ProjectsView({ projects, clients }: { projects: ProjectWithRels[]; clients: Pick<Client, "id" | "company_name">[] }) {
+type TeamMember = { id: string; full_name: string; role: string };
+
+export function ProjectsView({ projects, clients, team }: { projects: ProjectWithRels[]; clients: Pick<Client, "id" | "company_name">[]; team: TeamMember[] }) {
   const { success, error: toastError } = useToast();
+  const [assignedIds, setAssignedIds] = useState<string[]>([]);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("All");
   const [addOpen, setAddOpen] = useState(false);
@@ -86,7 +89,17 @@ export function ProjectsView({ projects, clients }: { projects: ProjectWithRels[
       overdue_reason: p.overdue_reason ?? "",
       employee_category: p.employee_category ?? "",
     });
+    setAssignedIds((p.members ?? []).map(m => m.user_id));
     setEditProject(p);
+  }
+
+  function openAdd() {
+    setAssignedIds([]);
+    setAddOpen(true);
+  }
+
+  function toggleAssigned(id: string) {
+    setAssignedIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
   }
 
   async function openDocs(p: ProjectWithRels) {
@@ -127,6 +140,11 @@ export function ProjectsView({ projects, clients }: { projects: ProjectWithRels[
         ? await updateProjectAction(editProject.id, fd)
         : await createProjectAction(fd);
       if (res.error) { toastError(res.error); return; }
+      const projectId = editProject ? editProject.id : (res as { id?: string }).id;
+      if (projectId) {
+        const assignRes = await setProjectMembersAction(projectId, assignedIds);
+        if (assignRes?.error) { toastError(assignRes.error); return; }
+      }
       success(editProject ? "Project updated." : "Project created.");
       closeModals();
     });
@@ -166,7 +184,7 @@ export function ProjectsView({ projects, clients }: { projects: ProjectWithRels[
           <h1 className="text-2xl font-bold text-slate-900">Projects</h1>
           <p className="text-slate-500 text-sm mt-1">{projects.length} projects total</p>
         </div>
-        <button onClick={() => setAddOpen(true)} className="flex items-center gap-2 px-4 py-2.5 rounded-xl gradient-indigo text-white text-sm font-medium hover:opacity-90 transition-opacity">
+        <button onClick={openAdd} className="flex items-center gap-2 px-4 py-2.5 rounded-xl gradient-indigo text-white text-sm font-medium hover:opacity-90 transition-opacity">
           <Plus className="w-4 h-4" /> New Project
         </button>
       </div>
@@ -208,7 +226,7 @@ export function ProjectsView({ projects, clients }: { projects: ProjectWithRels[
           <p className="text-slate-400 text-sm mt-1">
             {projects.length === 0 ? "Create your first project." : "Try adjusting your filters."}
           </p>
-          <button onClick={() => setAddOpen(true)} className="mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-xl gradient-indigo text-white text-sm font-medium">
+          <button onClick={openAdd} className="mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-xl gradient-indigo text-white text-sm font-medium">
             <Plus className="w-4 h-4" /> New Project
           </button>
         </div>
@@ -373,6 +391,22 @@ export function ProjectsView({ projects, clients }: { projects: ProjectWithRels[
             </Field>
             <Field label="Internal Notes" hint="Not visible to client" className="sm:col-span-2">
               <Textarea name="internal_notes" placeholder="Notes for the team only..." value={form.internal_notes} onChange={e => f("internal_notes", e.target.value)} />
+            </Field>
+            <Field label="Assigned To" hint="Assigned members see this project and can log progress, blockers & updates" className="sm:col-span-2">
+              {team.length === 0 ? (
+                <p className="text-xs text-slate-400">No team members yet. Add members on the Team page.</p>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 max-h-44 overflow-y-auto border border-slate-200 rounded-xl p-2">
+                  {team.map(m => (
+                    <label key={m.id} className={cn("flex items-center gap-2.5 px-2.5 py-2 rounded-lg cursor-pointer text-sm transition-colors", assignedIds.includes(m.id) ? "bg-indigo-50 text-indigo-700" : "hover:bg-slate-50 text-slate-700")}>
+                      <input type="checkbox" checked={assignedIds.includes(m.id)} onChange={() => toggleAssigned(m.id)} className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-300" />
+                      <span className="w-6 h-6 rounded-full bg-indigo-100 flex items-center justify-center text-[10px] font-bold text-indigo-600 flex-shrink-0">{initials(m.full_name)}</span>
+                      <span className="truncate flex-1">{m.full_name}</span>
+                      {m.role === "admin" && <span className="text-[9px] uppercase font-semibold text-slate-400">Admin</span>}
+                    </label>
+                  ))}
+                </div>
+              )}
             </Field>
           </div>
         </form>

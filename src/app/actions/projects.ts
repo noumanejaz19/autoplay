@@ -136,6 +136,45 @@ export async function updateProjectAction(id: string, formData: FormData) {
   return { success: true };
 }
 
+// Admin-only: set exactly which team members are assigned to a project.
+// Syncs the project_members table to match the given list of profile ids.
+// Assigned members can then see the project and add progress/blockers/updates.
+export async function setProjectMembersAction(projectId: string, memberIds: string[]) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const { data: callerData } = await supabase
+    .from("profiles").select("id, role").eq("auth_user_id", user.id).single();
+  const caller = callerData as { id: string; role: string } | null;
+  if (caller?.role !== "admin") return { error: "Only admins can assign projects." };
+
+  const { data: existingRows } = await supabase
+    .from("project_members").select("user_id, project_role").eq("project_id", projectId);
+  const existing = (existingRows ?? []) as { user_id: string; project_role: string }[];
+  const existingIds = new Set(existing.map((m) => m.user_id));
+  const nextIds = new Set(memberIds);
+
+  const toAdd = memberIds.filter((id) => !existingIds.has(id));
+  const toRemove = existing.filter((m) => !nextIds.has(m.user_id)).map((m) => m.user_id);
+
+  if (toAdd.length) {
+    const rows = toAdd.map((id) => ({ project_id: projectId, user_id: id, project_role: "Member" }));
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { error } = await (supabase.from("project_members") as any).insert(rows);
+    if (error) return { error: error.message };
+  }
+  if (toRemove.length) {
+    const { error } = await supabase
+      .from("project_members").delete().eq("project_id", projectId).in("user_id", toRemove);
+    if (error) return { error: error.message };
+  }
+
+  revalidatePath(`/projects/${projectId}`);
+  revalidatePath("/projects");
+  return { success: true };
+}
+
 // Save the admin or employee notes for a project. Both roles can read and
 // write both note areas (they live in separate boxes on the project page).
 export async function updateProjectNotesAction(id: string, kind: "admin" | "employee", content: string) {
