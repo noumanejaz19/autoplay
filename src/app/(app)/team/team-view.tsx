@@ -10,8 +10,17 @@ import {
   MoreVertical, UserX, UserCheck, Trash2, KeyRound, Copy, Check,
 } from "lucide-react";
 import type { Profile } from "@/lib/supabase/types";
-import { inviteUserAction, disableUserAction, reactivateUserAction, deleteUserAction, resetUserPasswordAction } from "@/app/actions/profiles";
+import { createUserWithPasswordAction, disableUserAction, reactivateUserAction, deleteUserAction, resetUserPasswordAction } from "@/app/actions/profiles";
 import { getPermissions, updatePermissionsAction } from "@/app/actions/permissions";
+
+function genPassword() {
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789!@#$";
+  const arr = new Uint32Array(14);
+  crypto.getRandomValues(arr);
+  let out = "";
+  for (let i = 0; i < 14; i++) out += chars[arr[i] % chars.length];
+  return out;
+}
 
 function initials(name: string) {
   return name.split(" ").map(w => w[0]).join("").toUpperCase().slice(0, 2);
@@ -42,7 +51,7 @@ const DEFAULT_PERMS: PermState = {
   allowed_client_ids: [],
 };
 
-const BLANK_INVITE = { email: "", full_name: "", role: "user", job_title: "", department: "" };
+const BLANK_INVITE = { email: "", full_name: "", role: "user", job_title: "", department: "", password: "" };
 
 export function TeamView({
   profiles,
@@ -83,12 +92,13 @@ export function TeamView({
 
   function handleInvite(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    if (inviteForm.password.length < 8) { toastError("Password must be at least 8 characters."); return; }
     const fd = new FormData(e.currentTarget);
     startTransition(async () => {
-      const res = await inviteUserAction(fd);
+      const res = await createUserWithPasswordAction(fd);
       if ("error" in res && res.error) { toastError(res.error); return; }
       if ("message" in res && res.message) success(res.message as string);
-      else success("Invite sent successfully.");
+      else success("Account created.");
       setInviteOpen(false);
       setInviteForm(BLANK_INVITE);
     });
@@ -176,12 +186,7 @@ export function TeamView({
   }
 
   function generatePassword() {
-    const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789!@#$";
-    let out = "";
-    const arr = new Uint32Array(14);
-    crypto.getRandomValues(arr);
-    for (let i = 0; i < 14; i++) out += chars[arr[i] % chars.length];
-    setResetPassword(out);
+    setResetPassword(genPassword());
     setResetCopied(false);
   }
 
@@ -232,7 +237,7 @@ export function TeamView({
             onClick={() => setInviteOpen(true)}
             className="flex items-center gap-2 px-4 py-2.5 rounded-xl gradient-indigo text-white text-sm font-medium hover:opacity-90 transition-opacity"
           >
-            <UserPlus className="w-4 h-4" /> Invite Member
+            <UserPlus className="w-4 h-4" /> Add Member
           </button>
         )}
       </div>
@@ -273,11 +278,11 @@ export function TeamView({
           <Users className="w-12 h-12 mx-auto text-slate-200 mb-4" />
           <h3 className="text-slate-700 font-medium">No team members found</h3>
           <p className="text-slate-400 text-sm mt-1">
-            {profiles.length === 0 ? "Invite your first team member to get started." : "Try adjusting your search."}
+            {profiles.length === 0 ? "Add your first team member to get started." : "Try adjusting your search."}
           </p>
           {isAdmin && profiles.length === 0 && (
             <button onClick={() => setInviteOpen(true)} className="mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-xl gradient-indigo text-white text-sm font-medium">
-              <UserPlus className="w-4 h-4" /> Invite Member
+              <UserPlus className="w-4 h-4" /> Add Member
             </button>
           )}
         </div>
@@ -444,14 +449,14 @@ export function TeamView({
       <Modal
         open={inviteOpen}
         onClose={() => { setInviteOpen(false); setInviteForm(BLANK_INVITE); }}
-        title="Invite Team Member"
-        subtitle="They'll receive an email to set their password and log in"
+        title="Add Team Member"
+        subtitle="Create their account and set a password — no email needed. Share the password with them."
         size="md"
         footer={
           <>
             <ModalBtn variant="secondary" onClick={() => { setInviteOpen(false); setInviteForm(BLANK_INVITE); }}>Cancel</ModalBtn>
             <ModalBtn form="invite-form" type="submit" disabled={isPending}>
-              {isPending ? "Sending…" : "Send Invite"}
+              {isPending ? "Creating…" : "Create Account"}
             </ModalBtn>
           </>
         }
@@ -475,6 +480,22 @@ export function TeamView({
             </Field>
             <Field label="Department" className="sm:col-span-2">
               <Input name="department" placeholder="e.g. Engineering, Operations" value={inviteForm.department} onChange={e => setInviteForm(p => ({ ...p, department: e.target.value }))} />
+            </Field>
+            <Field label="Password" required className="sm:col-span-2" hint="At least 8 characters — share this with the member so they can log in">
+              <div className="flex gap-2">
+                <Input name="password" value={inviteForm.password} onChange={e => setInviteForm(p => ({ ...p, password: e.target.value }))} placeholder="Type or generate a password" required className="flex-1" />
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const pw = genPassword();
+                    setInviteForm(p => ({ ...p, password: pw }));
+                    try { await navigator.clipboard.writeText(pw); success("Password generated & copied."); } catch { /* noop */ }
+                  }}
+                  className="flex items-center gap-1.5 px-3 rounded-xl border border-slate-200 text-xs font-medium text-indigo-600 hover:bg-indigo-50 whitespace-nowrap"
+                >
+                  <KeyRound className="w-3.5 h-3.5" /> Generate
+                </button>
+              </div>
             </Field>
           </div>
         </form>

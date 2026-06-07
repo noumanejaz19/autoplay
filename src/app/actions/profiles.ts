@@ -147,6 +147,64 @@ export async function inviteUserAction(formData: FormData) {
   return { success: true, message: `Invite sent to ${email}. They will receive an email to set their password.` };
 }
 
+// Create a team member's account directly with a password — no email sent.
+// Reliable alternative to email invites (avoids SMTP rate limits / link flows).
+// The account is usable immediately; the admin shares the password.
+export async function createUserWithPasswordAction(formData: FormData) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const { data: callerData } = await supabase
+    .from("profiles").select("role").eq("auth_user_id", user.id).single();
+  if ((callerData as { role: string } | null)?.role !== "admin") {
+    return { error: "Only admins can add users." };
+  }
+
+  const email = String(formData.get("email") || "").trim().toLowerCase();
+  const fullName = String(formData.get("full_name") || "").trim();
+  const role = String(formData.get("role") || "user");
+  const jobTitle = String(formData.get("job_title") || "").trim() || null;
+  const department = String(formData.get("department") || "").trim() || null;
+  const password = String(formData.get("password") || "");
+
+  if (!email || !fullName) return { error: "Email and name are required." };
+  if (password.length < 8) return { error: "Password must be at least 8 characters." };
+
+  const admin = createAdminClient();
+  const { data: created, error } = await admin.auth.admin.createUser({
+    email,
+    password,
+    email_confirm: true, // mark verified so they can log in right away
+    user_metadata: { full_name: fullName, role },
+  });
+  if (error) return { error: error.message };
+
+  const authUserId = created.user?.id;
+  if (!authUserId) return { error: "Could not create the account." };
+
+  // A DB trigger creates a base profile row on signup — upsert the full details.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error: profileError } = await (admin.from("profiles") as any).upsert({
+    auth_user_id: authUserId,
+    full_name: fullName,
+    email,
+    role: role as "admin" | "user",
+    job_title: jobTitle,
+    department,
+    timezone: "UTC",
+    availability_status: "Available",
+    is_active: true,
+    years_experience: 0,
+    skills: [],
+    certifications: [],
+  }, { onConflict: "auth_user_id" });
+  if (profileError) return { error: profileError.message };
+
+  revalidatePath("/team");
+  return { success: true, message: `Account created for ${fullName}. Share the password with them — they can log in now.` };
+}
+
 async function getCallerIsAdmin() {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
