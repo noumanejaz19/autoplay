@@ -11,6 +11,7 @@ import {
 import { StatusBadge } from "@/components/ui/status-badge";
 import { ProgressBar } from "@/components/ui/progress-bar";
 import { SectionCard } from "@/components/ui/section-card";
+import { RichText } from "@/components/ui/rich-text";
 import { Modal, Field, Input, Textarea, ModalBtn } from "@/components/ui/modal";
 import { useToast } from "@/components/ui/toast";
 import { cn } from "@/lib/utils";
@@ -241,7 +242,7 @@ export function ProjectDetailView({ project, blockers, timeLogs, updates, resour
                         {e.logger?.full_name ? `${e.logger.full_name} · ` : ""}{timeAgo(e.created_at)}
                       </span>
                     </div>
-                    {e.note && <p className="text-sm text-slate-600 mt-0.5">{e.note}</p>}
+                    {e.note && <RichText text={e.note} className="text-sm text-slate-600 mt-1" />}
                   </div>
                 </div>
               );
@@ -313,7 +314,7 @@ export function ProjectDetailView({ project, blockers, timeLogs, updates, resour
                     <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 capitalize">{u.update_type}</span>
                     <span className="text-xs text-slate-400 ml-auto">{timeAgo(u.created_at)}</span>
                   </div>
-                  <p className="text-sm text-slate-700 mt-0.5 whitespace-pre-wrap">{u.content}</p>
+                  <RichText text={u.content} className="text-sm text-slate-700 mt-1" />
                 </div>
               </div>
             ))}

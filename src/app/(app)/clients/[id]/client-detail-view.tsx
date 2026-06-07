@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { ProgressBar } from "@/components/ui/progress-bar";
+import { RichText } from "@/components/ui/rich-text";
 import { Modal, Field, Input, Textarea, Select, ModalBtn } from "@/components/ui/modal";
 import { useToast } from "@/components/ui/toast";
 import { cn } from "@/lib/utils";
@@ -310,7 +311,7 @@ export function ClientDetailView({ client, projects, blockers, timeLogs, documen
                           <Calendar className="w-3 h-3" /> {u.update_date ?? new Date(u.created_at).toISOString().slice(0, 10)}
                         </span>
                       </div>
-                      <p className="text-sm text-slate-700 leading-relaxed whitespace-pre-wrap">{u.content}</p>
+                      <RichText text={u.content} className="text-sm text-slate-700" />
                     </div>
                   </div>
                 </div>
